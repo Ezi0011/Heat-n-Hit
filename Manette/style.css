@@ -1,0 +1,121 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  font-family: Arial, sans-serif;
+  background: #111;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 12px;
+}
+
+.controller {
+  width: 100%;
+  max-width: 420px;
+  background: #f2f2f2;
+  border-radius: 8px;
+  padding: 18px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.dpad {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  flex-shrink: 0;
+}
+
+.diamond {
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  background: #d9d9d9;
+  top: 20px;
+  left: 20px;
+  transform: rotate(45deg);
+  border-radius: 6px;
+}
+
+.dir {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: 14px;
+  background: #4a26f0;
+  color: white;
+  font-size: 22px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  user-select: none;
+}
+
+.dir:active,
+.dir.active {
+  transform: scale(0.94);
+  filter: brightness(0.9);
+}
+
+.up {
+  top: 0;
+  left: 54px;
+}
+
+.left {
+  top: 54px;
+  left: 0;
+}
+
+.right {
+  top: 54px;
+  right: 0;
+}
+
+.down {
+  bottom: 0;
+  left: 54px;
+}
+
+.shoot {
+  width: 120px;
+  height: 120px;
+  border: none;
+  border-radius: 50%;
+  background: #4a26f0;
+  color: white;
+  font-size: 20px;
+  font-weight: 700;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.shoot:active,
+.shoot.active {
+  transform: scale(0.96);
+  filter: brightness(0.9);
+}
+
+.status {
+  margin-top: 12px;
+  color: white;
+  font-size: 14px;
+}
