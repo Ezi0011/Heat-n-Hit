@@ -9,49 +9,110 @@ export class GameScene extends Phaser.Scene {
         this.worldWidth = this.mapCols * this.tileSize;
         this.worldHeight = this.mapRows * this.tileSize;
 
-        this.player = null;
-        this.cursors = null;
         this.level = [];
+        this.players = new Map();
+        this.mapGraphics = null;
+        this.socket = null;
+        this.statusText = null;
     }
 
     preload() {
     }
 
     create() {
-        this.createLevel();
-        this.drawMap();
-        this.createPlayer();
-        this.createInputs();
+        this.mapGraphics = this.add.graphics();
+        this.createStatusText();
         this.setupFixedCamera();
+        this.connectToServer();
     }
 
     update() {
-    if (!this.player || this.player.isMoving) return;
-
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
-        this.tryMovePlayer(-1, 0);
-    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
-        this.tryMovePlayer(1, 0);
-    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
-        this.tryMovePlayer(0, -1);
-    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.down)) {
-        this.tryMovePlayer(0, 1);
     }
-}
+
+    createStatusText() {
+        this.statusText = this.add.text(20, 20, "Connecting to server...", {
+            color: "#ffffff",
+            fontSize: "24px",
+            backgroundColor: "#000000",
+            padding: {
+                x: 10,
+                y: 6
+            }
+        });
+
+        this.statusText.setScrollFactor(0);
+        this.statusText.setDepth(100);
+    }
+
+    connectToServer() {
+        if (typeof window.io !== "function") {
+            this.setStatus("Socket.IO client not found.\nStart the Node server.");
+            return;
+        }
+
+        this.socket = window.io();
+
+        this.socket.on("connect", () => {
+            this.setStatus("Screen connected.\nOpen /controller on phone.");
+        });
+
+        this.socket.on("disconnect", () => {
+            this.setStatus("Disconnected from server.");
+        });
+
+        this.socket.on("gameState", (state) => {
+            this.applyGameState(state);
+        });
+    }
+
+    applyGameState(state) {
+        if (!state || !Array.isArray(state.map) || state.map.length === 0) {
+            return;
+        }
+
+        const mapRows = state.map.length;
+        const mapCols = state.map[0].length;
+        const mapChanged = this.level.length === 0 || mapRows !== this.mapRows || mapCols !== this.mapCols;
+
+        this.tileSize = state.tileSize ?? this.tileSize;
+        this.level = state.map;
+        this.mapRows = mapRows;
+        this.mapCols = mapCols;
+        this.worldWidth = this.mapCols * this.tileSize;
+        this.worldHeight = this.mapRows * this.tileSize;
+
+        if (mapChanged) {
+            this.drawMap();
+            this.setupFixedCamera();
+        }
+
+        this.syncPlayers(state.players || {});
+
+        const playerCount = Object.keys(state.players || {}).length;
+        this.setStatus(`Screen connected.\nPlayers: ${playerCount}\nOpen /controller on phone.`);
+    }
 
     drawMap() {
-        const graphics = this.add.graphics();
+        if (!this.mapGraphics) {
+            return;
+        }
+
+        const graphics = this.mapGraphics;
+        graphics.clear();
 
         graphics.fillStyle(0x161616, 1);
         graphics.fillRect(0, 0, this.worldWidth, this.worldHeight);
 
-        for (let row = 0; row < this.mapRows; row++) {
-            for (let col = 0; col < this.mapCols; col++) {
+        for (let row = 0; row < this.mapRows; row += 1) {
+            for (let col = 0; col < this.mapCols; col += 1) {
                 const x = col * this.tileSize;
                 const y = row * this.tileSize;
 
                 if (this.level[row][col] === 1) {
                     graphics.fillStyle(0x6666ff, 1);
+                    graphics.fillRect(x, y, this.tileSize, this.tileSize);
+                } else if (this.level[row][col] === 4) {
+                    graphics.fillStyle(0x000000, 1);
                     graphics.fillRect(x, y, this.tileSize, this.tileSize);
                 }
 
@@ -61,34 +122,12 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
-   createPlayer() {
-    const startGridX = 5;
-    const startGridY = 5;
-
-    const startX = startGridX * this.tileSize + this.tileSize / 2;
-    const startY = startGridY * this.tileSize + this.tileSize / 2;
-
-    this.player = this.add.rectangle(startX, startY, 36, 36, 0xff6600);
-    this.physics.add.existing(this.player);
-
-    this.player.gridX = startGridX;
-    this.player.gridY = startGridY;
-    this.player.isMoving = false;
-    this.player.moveDuration = 120;
-}
-
-    createInputs() {
-        this.cursors = this.input.keyboard.createCursorKeys();
-    }
-
     setupFixedCamera() {
         const cam = this.cameras.main;
 
-        // caméra fixe sur le centre
-        
+        cam.setBounds(0, 0, this.worldWidth, this.worldHeight);
         cam.centerOn(this.worldWidth / 2, this.worldHeight / 2);
 
-        // zoom pour afficher toute la map
         const zoomX = cam.width / this.worldWidth;
         const zoomY = cam.height / this.worldHeight;
         const zoom = Math.min(zoomX, zoomY);
@@ -97,91 +136,75 @@ export class GameScene extends Phaser.Scene {
         cam.roundPixels = true;
     }
 
-    wrapEntity(entity) {
-        if (entity.x < 0) {
-            entity.x = this.worldWidth;
-        } else if (entity.x > this.worldWidth) {
-            entity.x = 0;
-        }
+    syncPlayers(serverPlayers) {
+        const activeIds = new Set(Object.keys(serverPlayers));
 
-        if (entity.y < 0) {
-            entity.y = this.worldHeight;
-        } else if (entity.y > this.worldHeight) {
-            entity.y = 0;
-        }
+        activeIds.forEach((id) => {
+            const serverPlayer = serverPlayers[id];
+            const targetX = this.gridToWorldX(serverPlayer.gridX);
+            const targetY = this.gridToWorldY(serverPlayer.gridY);
+            const fillColor = this.parseColor(serverPlayer.color);
+
+            if (!this.players.has(id)) {
+                const player = this.add.rectangle(targetX, targetY, 36, 36, fillColor);
+                player.gridX = serverPlayer.gridX;
+                player.gridY = serverPlayer.gridY;
+                this.players.set(id, player);
+                return;
+            }
+
+            const player = this.players.get(id);
+            player.setFillStyle(fillColor);
+
+            if (player.gridX === serverPlayer.gridX && player.gridY === serverPlayer.gridY) {
+                return;
+            }
+
+            player.gridX = serverPlayer.gridX;
+            player.gridY = serverPlayer.gridY;
+
+            this.tweens.killTweensOf(player);
+            this.tweens.add({
+                targets: player,
+                x: targetX,
+                y: targetY,
+                duration: serverPlayer.moveDuration ?? 120,
+                ease: "Linear"
+            });
+        });
+
+        Array.from(this.players.entries()).forEach(([id, player]) => {
+            if (activeIds.has(id)) {
+                return;
+            }
+
+            this.tweens.killTweensOf(player);
+            player.destroy();
+            this.players.delete(id);
+        });
     }
 
-    tryMovePlayer(dx, dy) {
-        let nextGridX = this.player.gridX + dx;
-        let nextGridY = this.player.gridY + dy;
+    gridToWorldX(gridX) {
+        return gridX * this.tileSize + this.tileSize / 2;
+    }
 
-        // wrap horizontal
-        if (nextGridX < 0) {
-            nextGridX = this.mapCols - 1;
-        } else if (nextGridX >= this.mapCols) {
-            nextGridX = 0;
+    gridToWorldY(gridY) {
+        return gridY * this.tileSize + this.tileSize / 2;
+    }
+
+    parseColor(color) {
+        if (typeof color !== "string") {
+            return 0xff6600;
         }
 
-        // wrap vertical
-        if (nextGridY < 0) {
-            nextGridY = this.mapRows - 1;
-        } else if (nextGridY >= this.mapRows) {
-            nextGridY = 0;
-        }
+        return Number.parseInt(color.replace("#", ""), 16);
+    }
 
-        // case bloquée = on annule
-        if (this.isBlocked(nextGridX, nextGridY)) {
+    setStatus(message) {
+        if (!this.statusText) {
             return;
         }
 
-        const targetX = nextGridX * this.tileSize + this.tileSize / 2;
-        const targetY = nextGridY * this.tileSize + this.tileSize / 2;
-
-        this.player.isMoving = true;
-        this.player.gridX = nextGridX;
-        this.player.gridY = nextGridY;
-
-        this.tweens.add({
-            targets: this.player,
-            x: targetX,
-            y: targetY,
-            duration: this.player.moveDuration,
-            onComplete: () => {
-                this.player.isMoving = false;
-            }
-        });
-}
-    
-
-    createLevel() {
-        this.level = [];
-
-        for (let row = 0; row < this.mapRows; row++) {
-            const line = [];
-
-            for (let col = 0; col < this.mapCols; col++) {
-                line.push(0); // 0 = case libre
-            }
-
-            this.level.push(line);
-        }
-
-        // Exemples de murs
-        this.level[5][8] = 1;
-        this.level[5][9] = 1;
-        this.level[5][10] = 1;
-
-        this.level[8][12] = 1;
-        this.level[9][12] = 1;
-        this.level[10][12] = 1;
-
-        this.level[3][20] = 1;
-        this.level[4][20] = 1;
-        this.level[5][20] = 1;
+        this.statusText.setText(message);
     }
-
-    isBlocked(gridX, gridY) {
-        return this.level[gridY][gridX] === 1;
-    }
-
 }

@@ -1,2 +1,10 @@
 # Heat-n-Hit
-Jeu d’arène multijoueur inspiré de Bomberman, orienté skill et anticipation.
+Jeu d'arene multijoueur inspire de Bomberman, oriente skill et anticipation.
+
+Lancement:
+- `cd Manette`
+- `npm start`
+
+Pages:
+- Ecran principal: `http://localhost:3000/`
+- Controleur telephone: `http://localhost:3000/controller/`
