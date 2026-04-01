@@ -1,6 +1,6 @@
 console.log("controleur chargé");
 
-const status = document.getElementById("status");
+const playerInfo = document.getElementById("playerInfo");
 const buttons = document.querySelectorAll(".dir");
 const bomb = document.getElementById("shootBtn");
 
@@ -8,29 +8,29 @@ const socket = io();
 
 socket.on("connect", () => {
   console.log("connecté au serveur");
-  status.textContent = "Connecté au serveur";
+  playerInfo.textContent = "Connecté au serveur...";
   socket.emit("joinAsController");
 });
 
 socket.on("joined", (data) => {
   console.log("joueur assigné :", data);
-  status.textContent = "Joueur : " + data.color;
+  playerInfo.textContent = `Joueur : ${data.color} | ID: ${data.playerId}`;
 });
 
 socket.on("gameFull", () => {
-  status.textContent = "Partie pleine";
+  playerInfo.textContent = "Partie pleine - Impossible de rejoindre";
 });
 
 socket.on("gameOver", (data) => {
   console.log("Game over:", data);
-  status.textContent = `💀 GAME OVER - tué par ${data.killerColor}`;
+  playerInfo.textContent = `💀 GAME OVER - tué par ${data.killerColor}`;
   buttons.forEach(btn => btn.disabled = true);
   bomb.disabled = true;
 });
 
 socket.on("disconnect", () => {
   console.log("déconnecté");
-  status.textContent = "Déconnecté";
+  playerInfo.textContent = "Déconnecté";
 });
 
 buttons.forEach((btn) => {
