@@ -21,6 +21,13 @@ socket.on("gameFull", () => {
   status.textContent = "Partie pleine";
 });
 
+socket.on("gameOver", (data) => {
+  console.log("Game over:", data);
+  status.textContent = `💀 GAME OVER - tué par ${data.killerColor}`;
+  buttons.forEach(btn => btn.disabled = true);
+  bomb.disabled = true;
+});
+
 socket.on("disconnect", () => {
   console.log("déconnecté");
   status.textContent = "Déconnecté";
