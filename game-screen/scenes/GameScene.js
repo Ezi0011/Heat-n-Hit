@@ -114,7 +114,7 @@ export class GameScene extends Phaser.Scene {
                 } else if (this.level[row][col] === 4) {
                     graphics.fillStyle(0x000000, 1);
                     graphics.fillRect(x, y, this.tileSize, this.tileSize);
-                }
+                } 
 
                 graphics.lineStyle(1, 0x333333, 1);
                 graphics.strokeRect(x, y, this.tileSize, this.tileSize);

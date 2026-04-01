@@ -1,27 +1,33 @@
 export class MapGenerator {
+    static MUR_SOLIDE = 1;
+    static MUR_DESTRUCTIBLE = 2;
+    static SPAWN = 4;
     static createMap(width, height) {
-        const map = [];
-
-        for (let y = 0; y < height; y += 1) {
-            map[y] = [];
-
-            for (let x = 0; x < width; x += 1) {
-                map[y][x] = 0;
-            }
-        }
-
+        const map = this.createEmptyMap(width, height);
         const spawns = this.generateSpawns(width, height);
 
-        spawns.forEach((spawn) => {
-            map[spawn.gridY][spawn.gridX] = 4;
-        });
+        this.placeSpawns(map, spawns);
+        this.placeWalls(map, spawns, width, height);
 
         return map;
     }
 
+    static createEmptyMap(width, height) {
+        const map = [];
+
+        for (let y = 0; y < height; y++) {
+            map[y] = [];
+
+            for (let x = 0; x < width; x++) {
+                map[y][x] = 0;
+            }
+        }
+        return map;
+    }
+
     static generateSpawns(width, height) {
-        const spawnCols = 6;
-        const spawnRows = 3;
+        const spawnCols = 8;
+        const spawnRows = 2;
         const stepX = width / spawnCols;
         const stepY = height / spawnRows;
         const spawns = [];
@@ -41,5 +47,54 @@ export class MapGenerator {
         }
 
         return spawns;
+    }
+
+    static isNearSpawn(x, y, spawns, radius = 1) {
+        for (const spawn of spawns) {
+            const dx = Math.abs(x - spawn.x);
+            const dy = Math.abs(y - spawn.y);
+
+            if (dx <= radius && dy <= radius) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static placeWalls(map, spawns, width, height) {
+        const wallChance = 0.18;
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                // Ne jamais écraser un spawn
+                if (map[y][x] !== 0) {
+                    continue;
+                }
+
+                // Safe zone autour des spawns
+                if (this.isNearSpawn(x, y, spawns, 1)) {
+                    continue;
+                }
+
+                // On garde les bords plus ouverts pour le wrap
+                const isNearBorder =
+                    x === 0 || y === 0 || x === width - 1 || y === height - 1;
+
+                if (isNearBorder) {
+                    continue;
+                }
+
+                if (Math.random() < wallChance) {
+                    map[y][x] = 1;
+                }
+            }
+        }
+    }
+
+    static placeSpawns(map, spawns) {
+        spawns.forEach(spawn => {
+            map[spawn.y][spawn.x] = 4;
+        });
     }
 }
