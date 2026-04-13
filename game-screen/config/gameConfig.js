@@ -1,3 +1,4 @@
+import { BootScene } from "../scenes/BootScene.js";
 import { GameScene } from "../scenes/GameScene.js";
 
 export const gameConfig = {
@@ -15,5 +16,5 @@ export const gameConfig = {
             debug: false
         }
     },
-    scene: [GameScene]
+    scene: [BootScene, GameScene]
 };

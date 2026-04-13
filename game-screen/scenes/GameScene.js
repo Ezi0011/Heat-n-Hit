@@ -12,24 +12,38 @@ export class GameScene extends Phaser.Scene {
         this.level = [];
         this.players = new Map();
         this.projectiles = new Map();
-        this.playerNames = new Map(); // Pour stocker les textes des noms
+        this.playerNames = new Map();
         this.mapGraphics = null;
         this.socket = null;
         this.statusText = null;
+        this.hasWinner = false;
+        this.victoryOverlay = null;
+        this.victoryWinnerText = null;
+        this.victorySubtitleText = null;
+        this.victoryRays = [];
     }
 
     preload() {
+        if (!this.textures.exists("mountain-bg")) {
+            this.load.image("mountain-bg", "assets/mountain-bg.jpg");
+        }
     }
 
     create() {
         this.mapGraphics = this.add.graphics();
-        //panneau de status de con 
         this.createStatusText();
         this.setupFixedCamera();
         this.connectToServer();
     }
 
     update() {
+        if (!this.hasWinner || !this.victoryRays.length) {
+            return;
+        }
+
+        this.victoryRays.forEach((ray, index) => {
+            ray.rotation += 0.0018 + index * 0.00035;
+        });
     }
 
     createStatusText() {
@@ -70,6 +84,10 @@ export class GameScene extends Phaser.Scene {
         this.socket.on("playerHit", (data) => {
             this.showHitPopup(data);
         });
+
+        this.socket.on("playerWon", (data) => {
+            this.showVictoryOverlay(data.winnerName);
+        });
     }
 
     applyGameState(state) {
@@ -96,8 +114,17 @@ export class GameScene extends Phaser.Scene {
         this.syncPlayers(state.players || {});
         this.syncProjectiles(state.projectiles || []);
 
-        const playerCount = Object.keys(state.players || {}).length;
-        this.setStatus(`Screen connected.\nPlayers: ${playerCount}\nOpen /controller on phone.`);
+        const playerEntries = Object.entries(state.players || {});
+        if (!this.hasWinner && playerEntries.length === 1) {
+            const [, winner] = playerEntries[0];
+            this.showVictoryOverlay(winner.name);
+            return;
+        }
+
+        if (!this.hasWinner) {
+            const playerCount = playerEntries.length;
+            this.setStatus(`Screen connected.\nPlayers: ${playerCount}\nOpen /controller on phone.`);
+        }
     }
 
     drawMap() {
@@ -160,9 +187,8 @@ export class GameScene extends Phaser.Scene {
                 const player = this.add.rectangle(targetX, targetY, 36, 36, fillColor);
                 player.gridX = serverPlayer.gridX;
                 player.gridY = serverPlayer.gridY;
-                player.setDepth(20); // Au-dessus de la map mais en-dessous des projectiles
+                player.setDepth(20);
 
-                // Créer le texte du nom
                 const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
                     fontSize: "14px",
                     color: "#ffffff",
@@ -170,7 +196,7 @@ export class GameScene extends Phaser.Scene {
                     padding: { x: 4, y: 2 }
                 });
                 nameText.setOrigin(0.5, 1);
-                nameText.setDepth(30); // Au-dessus des joueurs
+                nameText.setDepth(30);
 
                 this.players.set(id, player);
                 this.playerNames.set(id, nameText);
@@ -197,7 +223,6 @@ export class GameScene extends Phaser.Scene {
                 ease: "Linear"
             });
 
-            // Animer le texte du nom aussi
             this.tweens.killTweensOf(nameText);
             this.tweens.add({
                 targets: nameText,
@@ -217,7 +242,6 @@ export class GameScene extends Phaser.Scene {
             player.destroy();
             this.players.delete(id);
 
-            // Supprimer aussi le nom
             const nameText = this.playerNames.get(id);
             if (nameText) {
                 this.tweens.killTweensOf(nameText);
@@ -228,7 +252,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     syncProjectiles(serverProjectiles) {
-        const activeIds = new Set(serverProjectiles.map(p => p.id));
+        const activeIds = new Set(serverProjectiles.map((p) => p.id));
 
         serverProjectiles.forEach((serverProjectile) => {
             const targetX = this.gridToWorldX(serverProjectile.gridX);
@@ -239,7 +263,7 @@ export class GameScene extends Phaser.Scene {
                 const projectile = this.add.circle(targetX, targetY, 10, fillColor);
                 projectile.gridX = serverProjectile.gridX;
                 projectile.gridY = serverProjectile.gridY;
-                projectile.setDepth(50); // Assure que les projectiles sont au-dessus de tout
+                projectile.setDepth(50);
                 this.projectiles.set(serverProjectile.id, projectile);
                 return;
             }
@@ -293,6 +317,126 @@ export class GameScene extends Phaser.Scene {
             delay: 1200,
             onComplete: () => text.destroy()
         });
+    }
+
+    showVictoryOverlay(winnerName) {
+        if (this.hasWinner) {
+            if (this.victoryWinnerText) {
+                this.victoryWinnerText.setText(winnerName);
+            }
+            return;
+        }
+
+        this.hasWinner = true;
+        this.setStatus("");
+
+        const width = this.scale.width;
+        const height = this.scale.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        const container = this.add.container(0, 0);
+        container.setScrollFactor(0);
+        container.setDepth(500);
+        container.setAlpha(0);
+
+        const darkVeil = this.add.rectangle(centerX, centerY, width, height, 0x03080d, 0.38);
+        const glaze = this.add.rectangle(centerX, centerY, width, height, 0x08131d, 0.12);
+
+        const rays = this.createVictoryRays(centerX, centerY - 10);
+        this.victoryRays = rays;
+
+        const panel = this.add.rectangle(centerX, centerY + 10, 760, 360, 0x091421, 0.86)
+            .setStrokeStyle(4, 0xffd67a, 0.75);
+        const innerPanel = this.add.rectangle(centerX, centerY + 10, 708, 308, 0x102436, 0.82)
+            .setStrokeStyle(2, 0xa7ebff, 0.26);
+
+        const topLine = this.add.rectangle(centerX, centerY - 114, 420, 4, 0xa7ebff, 0.55);
+        const bottomLine = this.add.rectangle(centerX, centerY + 136, 420, 4, 0xffd67a, 0.55);
+
+        const title = this.add.text(centerX, centerY - 82, "VICTOIRE", {
+            fontSize: "66px",
+            fontStyle: "bold",
+            color: "#fff2bf",
+            fontFamily: "Arial Black, Arial",
+            stroke: "#17334c",
+            strokeThickness: 8
+        }).setOrigin(0.5);
+
+        this.victoryWinnerText = this.add.text(centerX, centerY + 2, winnerName, {
+            fontSize: "56px",
+            fontStyle: "bold",
+            color: "#ffffff",
+            fontFamily: "Arial Black, Arial",
+            align: "center",
+            wordWrap: { width: 620, useAdvancedWrap: true }
+        }).setOrigin(0.5);
+
+        this.victorySubtitleText = this.add.text(centerX, centerY + 82, "est le dernier joueur en lice", {
+            fontSize: "24px",
+            color: "#dceef7",
+            fontFamily: "Arial"
+        }).setOrigin(0.5);
+
+        const hint = this.add.text(centerX, centerY + 130, "Partie terminee", {
+            fontSize: "20px",
+            color: "#ffcf80",
+            fontFamily: "Arial",
+            letterSpacing: 2
+        }).setOrigin(0.5);
+
+        container.add([
+            darkVeil,
+            glaze,
+            ...rays,
+            panel,
+            innerPanel,
+            topLine,
+            bottomLine,
+            title,
+            this.victoryWinnerText,
+            this.victorySubtitleText,
+            hint
+        ]);
+
+        this.victoryOverlay = container;
+
+        this.tweens.add({
+            targets: container,
+            alpha: 1,
+            duration: 380,
+            ease: "Quad.Out"
+        });
+
+        this.tweens.add({
+            targets: [panel, innerPanel],
+            scaleX: { from: 0.88, to: 1 },
+            scaleY: { from: 0.88, to: 1 },
+            duration: 460,
+            ease: "Back.Out"
+        });
+
+        this.tweens.add({
+            targets: [title, this.victoryWinnerText, this.victorySubtitleText],
+            y: "-=8",
+            yoyo: true,
+            repeat: -1,
+            duration: 1800,
+            ease: "Sine.InOut"
+        });
+    }
+
+    createVictoryRays(centerX, centerY) {
+        const rays = [];
+
+        for (let i = 0; i < 10; i += 1) {
+            const ray = this.add.rectangle(centerX, centerY, 18, 420, 0xffd67a, 0.08);
+            ray.setOrigin(0.5, 1);
+            ray.setAngle(i * 18);
+            rays.push(ray);
+        }
+
+        return rays;
     }
 
     gridToWorldX(gridX) {

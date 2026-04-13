@@ -45,8 +45,55 @@ async function startServer() {
     projectiles: []
   };
 
+  const matchState = {
+    state: "lobby",
+    connectedPlayers: {},
+    activePlayers: {}
+  };
+
   function emitGameState() {
     io.emit("gameState", gameState);
+  }
+
+  function emitMatchState() {
+    io.emit("matchState", {
+      state: matchState.state,
+      connectedPlayers: matchState.connectedPlayers,
+      activePlayers: Object.keys(matchState.activePlayers)
+    });
+  }
+
+  function checkForWinner() {
+    if (matchState.state !== "playing") {
+      return;
+    }
+
+    const aliveIds = Object.keys(gameState.players);
+    if (aliveIds.length === 1) {
+      const winnerId = aliveIds[0];
+      const winnerPlayer = gameState.players[winnerId];
+      const winnerSocket = io.sockets.sockets.get(winnerId);
+
+      matchState.state = "finished";
+      emitMatchState();
+
+      if (winnerSocket) {
+        winnerSocket.emit("gameWon", {
+          winnerName: winnerPlayer.name
+        });
+      }
+
+      io.emit("playerWon", {
+        winnerId,
+        winnerName: winnerPlayer.name
+      });
+      return;
+    }
+
+    if (aliveIds.length === 0) {
+      matchState.state = "finished";
+      emitMatchState();
+    }
   }
 
   function getUsedSpawnCount() {
@@ -158,7 +205,10 @@ async function startServer() {
     });
 
     delete gameState.players[victimId];
+    delete matchState.activePlayers[victimId];
     console.log(`Player ${victimId} was hit by ${killerId}`);
+    emitGameState();
+    checkForWinner();
   }
 
   function updateProjectiles() {
@@ -248,27 +298,89 @@ async function startServer() {
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
     socket.emit("gameState", gameState);
+    socket.emit("matchState", {
+      state: matchState.state,
+      connectedPlayers: matchState.connectedPlayers,
+      activePlayers: Object.keys(matchState.activePlayers)
+    });
 
     socket.on("joinAsController", ({ name } = {}) => {
-      if (gameState.players[socket.id]) {
+      if (matchState.state === "playing") {
+        socket.emit("matchError", "La partie a déjà commencé");
+        return;
+      }
+
+      if (matchState.connectedPlayers[socket.id]) {
         socket.emit("joined", {
           playerId: socket.id,
-          color: gameState.players[socket.id].color
+          name: matchState.connectedPlayers[socket.id].name
         });
         return;
       }
 
-      const player = createPlayer(socket.id, name);
+      matchState.connectedPlayers[socket.id] = {
+        id: socket.id,
+        name: name || "Joueur"
+      };
 
-      if (!player) {
-        socket.emit("gameFull");
+      if (matchState.state === "lobby") {
+        matchState.state = "waiting";
+      }
+
+      socket.emit("joined", {
+        playerId: socket.id,
+        name: matchState.connectedPlayers[socket.id].name
+      });
+
+      console.log("Player joined lobby:", socket.id, "Name:", name);
+      emitMatchState();
+    });
+
+    socket.on("startMatch", () => {
+      if (matchState.state !== "waiting") {
         return;
       }
 
-      gameState.players[socket.id] = player;
-      socket.emit("joined", { playerId: socket.id, color: player.color });
-      console.log("Player joined:", socket.id, "Name:", player.name);
+      const connectedIds = Object.keys(matchState.connectedPlayers);
+      if (connectedIds.length === 0) {
+        return;
+      }
+
+      matchState.state = "playing";
+      gameState.players = {};
+      matchState.activePlayers = {};
+
+      let spawnIndex = 0;
+      for (const socketId of connectedIds) {
+        if (spawnIndex >= SPAWNS.length) {
+          break;
+        }
+
+        const connectedPlayer = matchState.connectedPlayers[socketId];
+        const spawn = SPAWNS[spawnIndex];
+        const playerData = {
+          id: socketId,
+          name: connectedPlayer.name,
+          color: COLORS[spawnIndex % COLORS.length],
+          gridX: spawn.gridX,
+          gridY: spawn.gridY,
+          moveDuration: MOVE_DURATION,
+          direction: "right",
+          movingDirection: null,
+          moveTimer: 0,
+          shootCooldown: 0,
+          alive: true
+        };
+
+        gameState.players[socketId] = playerData;
+        matchState.activePlayers[socketId] = true;
+        spawnIndex += 1;
+      }
+
+      matchState.connectedPlayers = {};
+      emitMatchState();
       emitGameState();
+      checkForWinner();
     });
 
     socket.on("move", ({ direction } = {}) => {
@@ -305,10 +417,20 @@ async function startServer() {
     });
 
     socket.on("disconnect", () => {
+      if (matchState.connectedPlayers[socket.id]) {
+        delete matchState.connectedPlayers[socket.id];
+        console.log("Player removed from lobby:", socket.id);
+        emitMatchState();
+        return;
+      }
+
       if (gameState.players[socket.id]) {
         delete gameState.players[socket.id];
-        console.log("Player removed:", socket.id);
+        delete matchState.activePlayers[socket.id];
+        console.log("Player removed from game:", socket.id);
         emitGameState();
+        checkForWinner();
+        emitMatchState();
         return;
       }
 

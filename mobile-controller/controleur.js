@@ -37,7 +37,10 @@ socket.on("connect", () => {
 
 socket.on("joined", (data) => {
   console.log("joueur assigné :", data);
-  playerInfo.textContent = `${playerName} | ${data.color} | ID: ${data.playerId}`;
+  playerInfo.textContent = `${playerName} | ID: ${data.playerId}`;
+  if (data.name) {
+    playerInfo.textContent = `${data.name} | ID: ${data.playerId}`;
+  }
 });
 
 socket.on("gameFull", () => {
@@ -51,6 +54,13 @@ socket.on("gameFull", () => {
 socket.on("gameOver", (data) => {
   console.log("Game over:", data);
   playerInfo.textContent = `💀 GAME OVER - tué par ${data.killerName}`;
+  buttons.forEach(btn => btn.disabled = true);
+  bomb.disabled = true;
+});
+
+socket.on("gameWon", (data) => {
+  console.log("Game won:", data);
+  playerInfo.textContent = `🏆 VICTOIRE - ${data.winnerName}, tu as gagné !`;
   buttons.forEach(btn => btn.disabled = true);
   bomb.disabled = true;
 });
