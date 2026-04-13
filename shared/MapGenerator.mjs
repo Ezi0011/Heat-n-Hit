@@ -2,12 +2,15 @@ export class MapGenerator {
     static MUR_SOLIDE = 1;
     static MUR_DESTRUCTIBLE = 2;
     static SPAWN = 4;
+
+
     static createMap(width, height) {
         const map = this.createEmptyMap(width, height);
         const spawns = this.generateSpawns(width, height);
 
         this.placeSpawns(map, spawns);
         this.placeWalls(map, spawns, width, height);
+        this.placeSpawnProtectionWalls(map, spawns, width, height);
 
         return map;
     }
@@ -67,6 +70,7 @@ export class MapGenerator {
 
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
+                
                 // Ne jamais écraser un spawn
                 if (map[y][x] !== 0) {
                     continue;
@@ -77,6 +81,7 @@ export class MapGenerator {
                     continue;
                 }
 
+
                 // On garde les bords plus ouverts pour le wrap
                 const isNearBorder =
                     x === 0 || y === 0 || x === width - 1 || y === height - 1;
@@ -86,11 +91,40 @@ export class MapGenerator {
                 }
 
                 if (Math.random() < wallChance) {
-                    map[y][x] = 1;
+                    if (Math.random() < 0.5) {
+                        map[y][x] = this.MUR_SOLIDE;
+                    } else {
+                        map[y][x] = this.MUR_DESTRUCTIBLE;
+                    }
+                    
                 }
+
             }
         }
     }
+
+    static placeSpawnProtectionWalls(map, spawns, width, height) {
+    const dist = 2;
+
+    for (const spawn of spawns) {
+        const positions = [
+            //{ x: spawn.x, y: spawn.y - dist },
+            //{ x: spawn.x, y: spawn.y + dist },
+            { x: spawn.x - dist, y: spawn.y },
+            { x: spawn.x + dist, y: spawn.y }
+        ];
+
+        for (const pos of positions) {
+            if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) {
+                continue;
+            }
+
+            if (map[pos.y][pos.x] === 0) {
+                map[pos.y][pos.x] = 1;
+            }
+        }
+    }
+}
 
     static placeSpawns(map, spawns) {
         spawns.forEach(spawn => {
