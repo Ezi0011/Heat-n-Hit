@@ -21,7 +21,8 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         this.mapGraphics = this.add.graphics();
-        //this.createStatusText();
+        //panneau de status de con 
+        this.createStatusText();
         this.setupFixedCamera();
         this.connectToServer();
     }
