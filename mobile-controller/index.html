@@ -2,10 +2,11 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Mobile Controller</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
+
 <body>
 
   <div id="playerInfo">Connexion...</div>
@@ -20,11 +21,11 @@
       <button class="dir down" data-direction="down">▼</button>
     </div>
 
-    <button class="shoot" id="shootBtn">Bomb</button>
+    <button class="shoot" id="shootBtn">SHOOT</button>
   </div>
-
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="./controleur.js"></script>
+
 </body>
 </html>
