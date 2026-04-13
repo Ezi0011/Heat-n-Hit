@@ -9,7 +9,8 @@ const io = new Server(server);
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const CONTROLLER_DIR = __dirname;
-const PORT = 3000;
+const DEFAULT_PORT = parseInt(process.env.PORT, 10) || 3000;
+let PORT = DEFAULT_PORT;
 
 const TILE_SIZE = 64;
 const MAP_COLS = 32;
@@ -40,7 +41,8 @@ async function startServer() {
   const gameState = {
     tileSize: TILE_SIZE,
     map: MAP,
-    players: {}
+    players: {},
+    projectiles: []
   };
 
   function emitGameState() {
@@ -51,7 +53,7 @@ async function startServer() {
     return Object.keys(gameState.players).length;
   }
 
-  function createPlayer(socketId) {
+  function createPlayer(socketId, name) {
     const index = getUsedSpawnCount();
 
     if (index >= SPAWNS.length) {
@@ -62,10 +64,15 @@ async function startServer() {
 
     return {
       id: socketId,
+      name: name || "Joueur",
       color: COLORS[index % COLORS.length],
       gridX: spawn.gridX,
       gridY: spawn.gridY,
-      moveDuration: MOVE_DURATION
+      moveDuration: MOVE_DURATION,
+      direction: "right",
+      movingDirection: null,
+      moveTimer: 0,
+      shootCooldown: 0
     };
   }
 
@@ -95,6 +102,120 @@ async function startServer() {
 
   function isBlocked(gridX, gridY) {
     return MAP[gridY][gridX] === 1;
+  }
+
+  function shootProjectile(player) {
+    const offsets = {
+      left: { dx: -1, dy: 0 },
+      right: { dx: 1, dy: 0 },
+      up: { dx: 0, dy: -1 },
+      down: { dx: 0, dy: 1 }
+    };
+
+    const offset = offsets[player.direction];
+    if (!offset) {
+      return;
+    }
+
+    const projectile = {
+      id: Date.now() + Math.random(),
+      ownerId: player.id,
+      gridX: player.gridX,
+      gridY: player.gridY,
+      direction: player.direction,
+      age: 0,
+      maxTime: 50,
+      color: player.color
+    };
+
+    gameState.projectiles.push(projectile);
+  }
+
+  function handlePlayerHit(victimId, killerId) {
+    const victim = gameState.players[victimId];
+    const killer = gameState.players[killerId];
+
+    if (!victim || !killer) {
+      return;
+    }
+
+    const victimSocket = io.sockets.sockets.get(victimId);
+    if (victimSocket) {
+      victimSocket.emit("gameOver", {
+        reason: "hit",
+        killerColor: killer.color,
+        killerName: killer.name
+      });
+    }
+
+    io.emit("playerHit", {
+      victimId,
+      killerId,
+      victimColor: victim.color,
+      killerColor: killer.color,
+      victimName: victim.name,
+      killerName: killer.name
+    });
+
+    delete gameState.players[victimId];
+    console.log(`Player ${victimId} was hit by ${killerId}`);
+  }
+
+  function updateProjectiles() {
+    const offsets = {
+      left: { dx: -1, dy: 0 },
+      right: { dx: 1, dy: 0 },
+      up: { dx: 0, dy: -1 },
+      down: { dx: 0, dy: 1 }
+    };
+
+    gameState.projectiles = gameState.projectiles.filter((projectile) => {
+      projectile.age++;
+
+      // Vérifie la durée de vie (20 secondes = 200 ticks de 100ms)
+      if (projectile.age >= projectile.maxTime) {
+        return false;
+      }
+
+      const offset = offsets[projectile.direction];
+      const nextGridX = wrapGridX(projectile.gridX + offset.dx);
+      const nextGridY = wrapGridY(projectile.gridY + offset.dy);
+
+      for (const [playerId, player] of Object.entries(gameState.players)) {
+        if (player.gridX === nextGridX && player.gridY === nextGridY) {
+          handlePlayerHit(playerId, projectile.ownerId);
+          return false;
+        }
+      }
+
+      // Collision avec les obstacles (valeur 1 sur la map)
+      if (isBlocked(nextGridX, nextGridY)) {
+        return false;
+      }
+
+      projectile.gridX = nextGridX;
+      projectile.gridY = nextGridY;
+      return true;
+    });
+  }
+
+  function updateGame() {
+    updateProjectiles();
+
+    for (const player of Object.values(gameState.players)) {
+      player.shootCooldown = Math.max(0, player.shootCooldown - 1);
+
+      if (player.movingDirection && player.shootCooldown === 0) {
+        player.moveTimer--;
+        if (player.moveTimer <= 0) {
+          if (tryMovePlayer(player, player.movingDirection)) {
+            player.moveTimer = 2; // move every 200ms (2 ticks at 100ms each)
+          }
+        }
+      }
+    }
+
+    emitGameState();
   }
 
   function tryMovePlayer(player, direction) {
@@ -128,7 +249,7 @@ async function startServer() {
     console.log("Client connected:", socket.id);
     socket.emit("gameState", gameState);
 
-    socket.on("joinAsController", () => {
+    socket.on("joinAsController", ({ name } = {}) => {
       if (gameState.players[socket.id]) {
         socket.emit("joined", {
           playerId: socket.id,
@@ -137,7 +258,7 @@ async function startServer() {
         return;
       }
 
-      const player = createPlayer(socket.id);
+      const player = createPlayer(socket.id, name);
 
       if (!player) {
         socket.emit("gameFull");
@@ -146,7 +267,7 @@ async function startServer() {
 
       gameState.players[socket.id] = player;
       socket.emit("joined", { playerId: socket.id, color: player.color });
-      console.log("Player joined:", socket.id);
+      console.log("Player joined:", socket.id, "Name:", player.name);
       emitGameState();
     });
 
@@ -157,23 +278,30 @@ async function startServer() {
         return;
       }
 
-      if (tryMovePlayer(player, direction)) {
-        emitGameState();
-      }
+      player.direction = direction;
+      player.movingDirection = direction;
     });
 
     socket.on("stopMove", () => {
-      // Kept for controller compatibility. Tile movement is handled on move.
-    });
-
-    socket.on("shoot", () => {
       const player = gameState.players[socket.id];
 
       if (!player) {
         return;
       }
 
-      console.log("Shoot:", socket.id);
+      player.movingDirection = null;
+    });
+
+    socket.on("shoot", () => {
+      const player = gameState.players[socket.id];
+
+      if (!player || player.shootCooldown > 0) {
+        return;
+      }
+
+      shootProjectile(player);
+      player.shootCooldown = 3; 
+      emitGameState();
     });
 
     socket.on("disconnect", () => {
@@ -188,11 +316,32 @@ async function startServer() {
     });
   });
 
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Game screen: http://localhost:${PORT}/`);
-    console.log(`Controller: http://localhost:${PORT}/controller/`);
+  function listen() {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Game screen: http://localhost:${PORT}/`);
+      console.log(`Controller: http://localhost:${PORT}/controller/`);
+
+      setInterval(updateGame, 100);
+    });
+  }
+
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.warn(`Port ${PORT} already in use, trying next port...`);
+      PORT += 1;
+      if (PORT > DEFAULT_PORT + 10) {
+        console.error("No available ports found in range", DEFAULT_PORT, DEFAULT_PORT + 10);
+        process.exit(1);
+      }
+      listen();
+      return;
+    }
+
+    throw err;
   });
+
+  listen();
 }
 
 startServer().catch((error) => {

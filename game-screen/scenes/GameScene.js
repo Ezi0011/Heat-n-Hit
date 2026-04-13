@@ -63,6 +63,10 @@ export class GameScene extends Phaser.Scene {
         this.socket.on("gameState", (state) => {
             this.applyGameState(state);
         });
+
+        this.socket.on("playerHit", (data) => {
+            this.showHitPopup(data);
+        });
     }
 
     applyGameState(state) {
@@ -87,6 +91,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.syncPlayers(state.players || {});
+        this.syncProjectiles(state.projectiles || []);
 
         const playerCount = Object.keys(state.players || {}).length;
         this.setStatus(`Screen connected.\nPlayers: ${playerCount}\nOpen /controller on phone.`);
@@ -184,6 +189,73 @@ export class GameScene extends Phaser.Scene {
             this.tweens.killTweensOf(player);
             player.destroy();
             this.players.delete(id);
+        });
+    }
+
+    syncProjectiles(serverProjectiles) {
+        const activeIds = new Set(serverProjectiles.map(p => p.id));
+
+        serverProjectiles.forEach((serverProjectile) => {
+            const targetX = this.gridToWorldX(serverProjectile.gridX);
+            const targetY = this.gridToWorldY(serverProjectile.gridY);
+            const fillColor = this.parseColor(serverProjectile.color);
+
+            if (!this.projectiles.has(serverProjectile.id)) {
+                const projectile = this.add.circle(targetX, targetY, 10, fillColor);
+                projectile.gridX = serverProjectile.gridX;
+                projectile.gridY = serverProjectile.gridY;
+                this.projectiles.set(serverProjectile.id, projectile);
+                return;
+            }
+
+            const projectile = this.projectiles.get(serverProjectile.id);
+            projectile.setFillStyle(fillColor);
+
+            if (projectile.gridX === serverProjectile.gridX && projectile.gridY === serverProjectile.gridY) {
+                return;
+            }
+
+            projectile.gridX = serverProjectile.gridX;
+            projectile.gridY = serverProjectile.gridY;
+
+            this.tweens.killTweensOf(projectile);
+            this.tweens.add({
+                targets: projectile,
+                x: targetX,
+                y: targetY,
+                duration: 80,
+                ease: "Linear"
+            });
+        });
+
+        Array.from(this.projectiles.entries()).forEach(([id, projectile]) => {
+            if (activeIds.has(id)) {
+                return;
+            }
+
+            projectile.destroy();
+            this.projectiles.delete(id);
+        });
+    }
+
+    showHitPopup(data) {
+        const message = `Player ${data.killerColor} killed Player ${data.victimColor}!`;
+        const text = this.add.text(this.cameras.main.centerX, 40, message, {
+            fontSize: "28px",
+            color: "#ffffff",
+            backgroundColor: "#000000",
+            padding: { x: 12, y: 8 }
+        });
+
+        text.setOrigin(0.5, 0);
+        text.setDepth(200);
+
+        this.tweens.add({
+            targets: text,
+            alpha: 0,
+            duration: 2400,
+            delay: 1200,
+            onComplete: () => text.destroy()
         });
     }
 
