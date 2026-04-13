@@ -11,6 +11,8 @@ export class GameScene extends Phaser.Scene {
 
         this.level = [];
         this.players = new Map();
+        this.projectiles = new Map();
+        this.playerNames = new Map(); // Pour stocker les textes des noms
         this.mapGraphics = null;
         this.socket = null;
         this.statusText = null;
@@ -158,11 +160,25 @@ export class GameScene extends Phaser.Scene {
                 const player = this.add.rectangle(targetX, targetY, 36, 36, fillColor);
                 player.gridX = serverPlayer.gridX;
                 player.gridY = serverPlayer.gridY;
+                player.setDepth(20); // Au-dessus de la map mais en-dessous des projectiles
+
+                // Créer le texte du nom
+                const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
+                    fontSize: "14px",
+                    color: "#ffffff",
+                    backgroundColor: "#000000",
+                    padding: { x: 4, y: 2 }
+                });
+                nameText.setOrigin(0.5, 1);
+                nameText.setDepth(30); // Au-dessus des joueurs
+
                 this.players.set(id, player);
+                this.playerNames.set(id, nameText);
                 return;
             }
 
             const player = this.players.get(id);
+            const nameText = this.playerNames.get(id);
             player.setFillStyle(fillColor);
 
             if (player.gridX === serverPlayer.gridX && player.gridY === serverPlayer.gridY) {
@@ -180,6 +196,16 @@ export class GameScene extends Phaser.Scene {
                 duration: serverPlayer.moveDuration ?? 120,
                 ease: "Linear"
             });
+
+            // Animer le texte du nom aussi
+            this.tweens.killTweensOf(nameText);
+            this.tweens.add({
+                targets: nameText,
+                x: targetX,
+                y: targetY - 30,
+                duration: serverPlayer.moveDuration ?? 120,
+                ease: "Linear"
+            });
         });
 
         Array.from(this.players.entries()).forEach(([id, player]) => {
@@ -190,6 +216,14 @@ export class GameScene extends Phaser.Scene {
             this.tweens.killTweensOf(player);
             player.destroy();
             this.players.delete(id);
+
+            // Supprimer aussi le nom
+            const nameText = this.playerNames.get(id);
+            if (nameText) {
+                this.tweens.killTweensOf(nameText);
+                nameText.destroy();
+                this.playerNames.delete(id);
+            }
         });
     }
 
@@ -205,6 +239,7 @@ export class GameScene extends Phaser.Scene {
                 const projectile = this.add.circle(targetX, targetY, 10, fillColor);
                 projectile.gridX = serverProjectile.gridX;
                 projectile.gridY = serverProjectile.gridY;
+                projectile.setDepth(50); // Assure que les projectiles sont au-dessus de tout
                 this.projectiles.set(serverProjectile.id, projectile);
                 return;
             }
@@ -240,7 +275,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     showHitPopup(data) {
-        const message = `Player ${data.killerColor} killed Player ${data.victimColor}!`;
+        const message = `${data.killerName} killed ${data.victimName}!`;
         const text = this.add.text(this.cameras.main.centerX, 40, message, {
             fontSize: "28px",
             color: "#ffffff",
