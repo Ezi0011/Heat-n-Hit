@@ -149,6 +149,7 @@ async function startServer() {
       state: matchState.state,
       phase: matchState.phase,
       message: matchState.message,
+      controllerUrl: getControllerUrl(),
       connectedPlayers: publicPlayers,
       registeredPlayers: publicPlayers,
       activePlayers: Object.keys(gameState.players),
