@@ -26,6 +26,34 @@ export class GameScene extends Phaser.Scene {
         this.victoryWinnerText = null;
         this.victorySubtitleText = null;
         this.victoryRays = [];
+        this.restartButton = null;
+        this.restartButtonText = null;
+        this.isRestartingTournament = false;
+
+        this.handleSocketConnect = () => {
+            this.refreshStatus();
+        };
+
+        this.handleSocketDisconnect = () => {
+            this.setStatus("Disconnected from server.");
+            this.setRoundText("");
+        };
+
+        this.handleGameState = (state) => {
+            this.applyGameState(state);
+        };
+
+        this.handleMatchState = (state) => {
+            this.applyMatchState(state);
+        };
+
+        this.handlePlayerHit = (data) => {
+            this.showHitPopup(data);
+        };
+
+        this.handlePlayerWon = (data) => {
+            this.showVictoryOverlay(data.winnerName);
+        };
     }
 
     init(data) {
@@ -50,6 +78,7 @@ export class GameScene extends Phaser.Scene {
         this.createRoundText();
         this.setupFixedCamera();
         this.connectToServer();
+        this.events.once("shutdown", () => this.detachSocketListeners());
 
         if (this.pendingMatchState) {
             this.applyMatchState(this.pendingMatchState);
@@ -109,34 +138,45 @@ export class GameScene extends Phaser.Scene {
             this.socket = window.io();
         }
 
-        this.socket.on("connect", () => {
-            this.refreshStatus();
-        });
+        this.detachSocketListeners();
 
-        this.socket.on("disconnect", () => {
-            this.setStatus("Disconnected from server.");
-            this.setRoundText("");
-        });
+        this.socket.on("connect", this.handleSocketConnect);
+        this.socket.on("disconnect", this.handleSocketDisconnect);
+        this.socket.on("gameState", this.handleGameState);
+        this.socket.on("matchState", this.handleMatchState);
+        this.socket.on("playerHit", this.handlePlayerHit);
+        this.socket.on("playerWon", this.handlePlayerWon);
+    }
 
-        this.socket.on("gameState", (state) => {
-            this.applyGameState(state);
-        });
+    detachSocketListeners() {
+        if (!this.socket) {
+            return;
+        }
 
-        this.socket.on("matchState", (state) => {
-            this.applyMatchState(state);
-        });
-
-        this.socket.on("playerHit", (data) => {
-            this.showHitPopup(data);
-        });
-
-        this.socket.on("playerWon", (data) => {
-            this.showVictoryOverlay(data.winnerName);
-        });
+        this.socket.off("connect", this.handleSocketConnect);
+        this.socket.off("disconnect", this.handleSocketDisconnect);
+        this.socket.off("gameState", this.handleGameState);
+        this.socket.off("matchState", this.handleMatchState);
+        this.socket.off("playerHit", this.handlePlayerHit);
+        this.socket.off("playerWon", this.handlePlayerWon);
     }
 
     applyMatchState(state) {
         this.matchState = state;
+
+        if (state.phase === "lobby") {
+            this.scene.start("BootScene", {
+                socket: this.socket,
+                matchState: state
+            });
+            return;
+        }
+
+        if (state.state !== "completed") {
+            this.hasWinner = false;
+            this.isRestartingTournament = false;
+        }
+
         this.refreshStatus();
     }
 
@@ -498,6 +538,41 @@ export class GameScene extends Phaser.Scene {
             letterSpacing: 2
         }).setOrigin(0.5);
 
+        this.restartButton = this.add.rectangle(centerX, centerY + 190, 260, 68, 0x2dbd4f, 1)
+            .setStrokeStyle(4, 0xcaffd5, 0.95)
+            .setInteractive({ useHandCursor: true })
+            .setScrollFactor(0)
+            .setDepth(520);
+        this.restartButtonText = this.add.text(centerX, centerY + 190, "RELANCER", {
+            fontSize: "28px",
+            fontStyle: "bold",
+            color: "#0d2412",
+            fontFamily: "Arial Black, Arial"
+        })
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(521);
+
+        this.restartButton.on("pointerover", () => {
+            if (this.isRestartingTournament) {
+                return;
+            }
+
+            this.restartButton.setFillStyle(0x3ad65f);
+        });
+
+        this.restartButton.on("pointerout", () => {
+            if (this.isRestartingTournament) {
+                return;
+            }
+
+            this.restartButton.setFillStyle(0x2dbd4f);
+        });
+
+        this.restartButton.on("pointerdown", () => {
+            this.requestTournamentRestart();
+        });
+
         container.add([
             darkVeil,
             glaze,
@@ -581,12 +656,12 @@ export class GameScene extends Phaser.Scene {
             return;
         }
 
-        if (this.roundTextHideEvent) {
-            this.roundTextHideEvent.remove(false);
-            this.roundTextHideEvent = null;
-        }
-
         if (!message) {
+            if (this.roundTextHideEvent) {
+                this.roundTextHideEvent.remove(false);
+                this.roundTextHideEvent = null;
+            }
+
             this.roundTextValue = "";
             this.roundText.setText("");
             this.roundText.setAlpha(1);
@@ -596,6 +671,11 @@ export class GameScene extends Phaser.Scene {
 
         if (message === this.roundTextValue) {
             return;
+        }
+
+        if (this.roundTextHideEvent) {
+            this.roundTextHideEvent.remove(false);
+            this.roundTextHideEvent = null;
         }
 
         this.roundTextValue = message;
@@ -615,5 +695,24 @@ export class GameScene extends Phaser.Scene {
             });
             this.roundTextHideEvent = null;
         });
+    }
+
+    requestTournamentRestart() {
+        if (!this.socket || this.isRestartingTournament) {
+            return;
+        }
+
+        this.isRestartingTournament = true;
+
+        if (this.restartButton) {
+            this.restartButton.disableInteractive();
+            this.restartButton.setFillStyle(0x5d6d79);
+        }
+
+        if (this.restartButtonText) {
+            this.restartButtonText.setText("RELANCE...");
+        }
+
+        this.socket.emit("restartTournament");
     }
 }

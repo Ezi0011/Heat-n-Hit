@@ -4,6 +4,7 @@ export class BootScene extends Phaser.Scene {
 
         this.socket = null;
         this.matchState = null;
+        this.pendingMatchState = null;
         this.playerListContainer = [];
         this.currentScreen = "launch";
         this.startButton = null;
@@ -11,34 +12,16 @@ export class BootScene extends Phaser.Scene {
         this.connectionInfoText = null;
         this.playerListY = 0;
         this.listLayout = null;
-    }
 
-    preload() {
-        this.load.image("launch-bg", "assets/launch-bg.png");
-    }
-
-    create() {
-        if (typeof window.io !== "function") {
-            this.showError("Socket.IO client not found.\nStart the Node server.");
-            return;
-        }
-
-        this.connectToServer();
-        this.renderLaunchScreen();
-    }
-
-    connectToServer() {
-        this.socket = window.io();
-
-        this.socket.on("connect", () => {
+        this.handleSocketConnect = () => {
             console.log("Screen connected");
-        });
+        };
 
-        this.socket.on("disconnect", () => {
+        this.handleSocketDisconnect = () => {
             this.showError("Disconnected from server");
-        });
+        };
 
-        this.socket.on("matchState", (state) => {
+        this.handleMatchState = (state) => {
             this.matchState = state;
 
             if (state.phase !== "lobby") {
@@ -52,10 +35,71 @@ export class BootScene extends Phaser.Scene {
                 return;
             }
 
+            if (state.state === "waiting" && this.currentScreen !== "waiting") {
+                this.renderWaitingScreen();
+                return;
+            }
+
             if (this.currentScreen === "waiting") {
                 this.updateWaitingScreen();
             }
-        });
+        };
+    }
+
+    init(data) {
+        if (data?.socket) {
+            this.socket = data.socket;
+        }
+
+        if (data?.matchState) {
+            this.pendingMatchState = data.matchState;
+        }
+    }
+
+    preload() {
+        this.load.image("launch-bg", "assets/launch-bg.png");
+    }
+
+    create() {
+        if (typeof window.io !== "function") {
+            this.showError("Socket.IO client not found.\nStart the Node server.");
+            return;
+        }
+
+        this.connectToServer();
+        this.events.once("shutdown", () => this.detachSocketListeners());
+
+        if (this.pendingMatchState) {
+            this.handleMatchState(this.pendingMatchState);
+            this.pendingMatchState = null;
+            if (this.currentScreen !== "launch") {
+                return;
+            }
+        }
+
+        this.renderLaunchScreen();
+    }
+
+    connectToServer() {
+        if (!this.socket) {
+            this.socket = window.io();
+        }
+
+        this.detachSocketListeners();
+
+        this.socket.on("connect", this.handleSocketConnect);
+        this.socket.on("disconnect", this.handleSocketDisconnect);
+        this.socket.on("matchState", this.handleMatchState);
+    }
+
+    detachSocketListeners() {
+        if (!this.socket) {
+            return;
+        }
+
+        this.socket.off("connect", this.handleSocketConnect);
+        this.socket.off("disconnect", this.handleSocketDisconnect);
+        this.socket.off("matchState", this.handleMatchState);
     }
 
     renderLaunchScreen() {

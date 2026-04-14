@@ -475,6 +475,35 @@ async function startServer() {
     goToNextQuarter(0);
   }
 
+  function restartTournament() {
+    clearTransitionTimer();
+    resetArena();
+
+    matchState.phase = "lobby";
+    matchState.currentRound = null;
+    matchState.finalists = [];
+    matchState.winnerId = null;
+    matchState.quarterGroups = Array.from({ length: QUARTER_COUNT }, () => []);
+
+    const registeredPlayers = Object.values(matchState.registeredPlayers);
+    if (registeredPlayers.length === 0) {
+      matchState.state = "lobby";
+      matchState.message = "En attente de joueurs.";
+    } else {
+      matchState.state = "waiting";
+      matchState.message = "Tournoi relance. Appuyez sur demarrer.";
+    }
+
+    registeredPlayers.forEach((player) => {
+      player.status = "waiting";
+      player.quarterIndex = null;
+      player.finalQualified = false;
+    });
+
+    emitGameState();
+    emitMatchState();
+  }
+
   function finishTournament(survivorIds) {
     disableAllPlayers();
     matchState.phase = "completed";
@@ -793,6 +822,14 @@ async function startServer() {
       }
 
       startTournament();
+    });
+
+    socket.on("restartTournament", () => {
+      if (matchState.state !== "completed") {
+        return;
+      }
+
+      restartTournament();
     });
 
     socket.on("move", ({ direction } = {}) => {
