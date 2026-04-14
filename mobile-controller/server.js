@@ -35,6 +35,8 @@ app.get("/controller", (_req, res) => {
 
 async function startServer() {
   const { MapGenerator } = await import("../shared/MapGenerator.mjs");
+  const SOLID_WALL = MapGenerator.MUR_SOLIDE;
+  const DESTRUCTIBLE_WALL = MapGenerator.MUR_DESTRUCTIBLE;
   const MAP = MapGenerator.createMap(MAP_COLS, MAP_ROWS);
   const SPAWNS = MapGenerator.generateSpawns(MAP_COLS, MAP_ROWS);
 
@@ -147,8 +149,22 @@ async function startServer() {
     return gridY;
   }
 
+  function getTile(gridX, gridY) {
+    return gameState.map[gridY]?.[gridX];
+  }
+
   function isBlocked(gridX, gridY) {
-    return MAP[gridY][gridX] === 1;
+    const tile = getTile(gridX, gridY);
+    return tile === SOLID_WALL || tile === DESTRUCTIBLE_WALL;
+  }
+
+  function destroyWall(gridX, gridY) {
+    if (getTile(gridX, gridY) !== DESTRUCTIBLE_WALL) {
+      return false;
+    }
+
+    gameState.map[gridY][gridX] = 0;
+    return true;
   }
 
   function shootProjectile(player) {
@@ -238,8 +254,27 @@ async function startServer() {
         }
       }
 
+      const nextTile = getTile(nextGridX, nextGridY);
+      if (nextTile === DESTRUCTIBLE_WALL) {
+        destroyWall(nextGridX, nextGridY);
+        return false;
+      }
+
+      if (nextTile === SOLID_WALL) {
+        return false;
+      }
+
       // Collision avec les obstacles (valeur 1 sur la map)
-      if (isBlocked(nextGridX, nextGridY)) {
+      if (false && isBlocked(nextGridX, nextGridY)) {
+        if (MAP[nextGridY][nextGridX] === 2) {
+          MAP[nextGridY][nextGridX] = 0; // Détruire l'obstacle destructible
+          io.emit("mapUpdated", {
+            gridX: nextGridX,
+            gridY: nextGridY,
+            value: 0
+          });
+        }
+
         return false;
       }
 

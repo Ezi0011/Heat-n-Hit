@@ -97,7 +97,8 @@ export class GameScene extends Phaser.Scene {
 
         const mapRows = state.map.length;
         const mapCols = state.map[0].length;
-        const mapChanged = this.level.length === 0 || mapRows !== this.mapRows || mapCols !== this.mapCols;
+        const mapResized = this.level.length === 0 || mapRows !== this.mapRows || mapCols !== this.mapCols;
+        const mapChanged = mapResized || this.hasMapContentChanged(state.map);
 
         this.tileSize = state.tileSize ?? this.tileSize;
         this.level = state.map;
@@ -108,6 +109,9 @@ export class GameScene extends Phaser.Scene {
 
         if (mapChanged) {
             this.drawMap();
+        }
+
+        if (mapResized) {
             this.setupFixedCamera();
         }
 
@@ -125,6 +129,26 @@ export class GameScene extends Phaser.Scene {
             const playerCount = playerEntries.length;
             this.setStatus(`Screen connected.\nPlayers: ${playerCount}\nOpen /controller on phone.`);
         }
+    }
+
+    hasMapContentChanged(nextMap) {
+        if (this.level.length !== nextMap.length) {
+            return true;
+        }
+
+        for (let row = 0; row < nextMap.length; row += 1) {
+            if (!Array.isArray(this.level[row]) || this.level[row].length !== nextMap[row].length) {
+                return true;
+            }
+
+            for (let col = 0; col < nextMap[row].length; col += 1) {
+                if (this.level[row][col] !== nextMap[row][col]) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     drawMap() {
