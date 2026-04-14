@@ -1,4 +1,5 @@
 const path = require("path");
+const os = require("os");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -38,6 +39,28 @@ async function startServer() {
   const MAP = MapGenerator.createMap(MAP_COLS, MAP_ROWS);
   const SPAWNS = MapGenerator.generateSpawns(MAP_COLS, MAP_ROWS);
 
+  function getLocalIpAddress() {
+    const interfaces = os.networkInterfaces();
+
+    for (const networkInterface of Object.values(interfaces)) {
+      if (!Array.isArray(networkInterface)) {
+        continue;
+      }
+
+      for (const address of networkInterface) {
+        if (address.family === "IPv4" && !address.internal) {
+          return address.address;
+        }
+      }
+    }
+
+    return "localhost";
+  }
+
+  function getControllerUrl() {
+    return `http://${getLocalIpAddress()}:${PORT}/controller/`;
+  }
+
   const gameState = {
     tileSize: TILE_SIZE,
     map: MAP,
@@ -59,7 +82,8 @@ async function startServer() {
     io.emit("matchState", {
       state: matchState.state,
       connectedPlayers: matchState.connectedPlayers,
-      activePlayers: Object.keys(matchState.activePlayers)
+      activePlayers: Object.keys(matchState.activePlayers),
+      controllerUrl: getControllerUrl()
     });
   }
 
@@ -301,7 +325,8 @@ async function startServer() {
     socket.emit("matchState", {
       state: matchState.state,
       connectedPlayers: matchState.connectedPlayers,
-      activePlayers: Object.keys(matchState.activePlayers)
+      activePlayers: Object.keys(matchState.activePlayers),
+      controllerUrl: getControllerUrl()
     });
 
     socket.on("joinAsController", ({ name } = {}) => {
@@ -361,6 +386,7 @@ async function startServer() {
         const playerData = {
           id: socketId,
           name: connectedPlayer.name,
+          spriteIndex: spawnIndex,
           color: COLORS[spawnIndex % COLORS.length],
           gridX: spawn.gridX,
           gridY: spawn.gridY,
@@ -377,7 +403,6 @@ async function startServer() {
         spawnIndex += 1;
       }
 
-      matchState.connectedPlayers = {};
       emitMatchState();
       emitGameState();
       checkForWinner();
@@ -417,19 +442,26 @@ async function startServer() {
     });
 
     socket.on("disconnect", () => {
-      if (matchState.connectedPlayers[socket.id]) {
-        delete matchState.connectedPlayers[socket.id];
-        console.log("Player removed from lobby:", socket.id);
-        emitMatchState();
-        return;
-      }
-
       if (gameState.players[socket.id]) {
+        delete matchState.connectedPlayers[socket.id];
         delete gameState.players[socket.id];
         delete matchState.activePlayers[socket.id];
         console.log("Player removed from game:", socket.id);
         emitGameState();
         checkForWinner();
+        if (matchState.state !== "playing") {
+          matchState.state = Object.keys(matchState.connectedPlayers).length > 0 ? "waiting" : "lobby";
+        }
+        emitMatchState();
+        return;
+      }
+
+      if (matchState.connectedPlayers[socket.id]) {
+        delete matchState.connectedPlayers[socket.id];
+        console.log("Player removed from lobby:", socket.id);
+        if (matchState.state !== "playing") {
+          matchState.state = Object.keys(matchState.connectedPlayers).length > 0 ? "waiting" : "lobby";
+        }
         emitMatchState();
         return;
       }
@@ -442,7 +474,7 @@ async function startServer() {
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://localhost:${PORT}`);
       console.log(`Game screen: http://localhost:${PORT}/`);
-      console.log(`Controller: http://localhost:${PORT}/controller/`);
+      console.log(`Controller: ${getControllerUrl()}`);
 
       setInterval(updateGame, 100);
     });

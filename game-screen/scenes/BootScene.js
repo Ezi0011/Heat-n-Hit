@@ -11,6 +11,8 @@ export class BootScene extends Phaser.Scene {
         this.connectionInfoText = null;
         this.playerListY = 0;
         this.listLayout = null;
+        this.qrCodeElement = null;
+        this.qrCodeLabelElement = null;
     }
 
     preload() {
@@ -25,6 +27,9 @@ export class BootScene extends Phaser.Scene {
 
         this.connectToServer();
         this.renderLaunchScreen();
+        this.scale.on("resize", this.handleSceneResize, this);
+        this.events.once("shutdown", this.handleSceneShutdown, this);
+        this.events.once("destroy", this.handleSceneShutdown, this);
     }
 
     connectToServer() {
@@ -44,8 +49,22 @@ export class BootScene extends Phaser.Scene {
             if (state.state === "playing") {
                 if (this.currentScreen !== "playing") {
                     this.currentScreen = "playing";
-                    this.scene.start("GameScene", { socket: this.socket });
+                    if (this.socket) {
+                        this.socket.disconnect();
+                        this.socket = null;
+                    }
+                    this.scene.start("GameScene");
                 }
+                return;
+            }
+
+            if (state.state === "waiting") {
+                if (this.currentScreen !== "waiting") {
+                    this.renderWaitingScreen();
+                    return;
+                }
+            } else if (state.state === "lobby" && this.currentScreen !== "launch") {
+                this.renderLaunchScreen();
                 return;
             }
 
@@ -114,6 +133,7 @@ export class BootScene extends Phaser.Scene {
         const panelHeight = Math.min(height - 80, 600);
         const panelTop = 40;
         const panelLeft = centerX - panelWidth / 2;
+        const panelBottom = panelTop + panelHeight;
 
         this.add.rectangle(centerX, panelTop + panelHeight / 2, panelWidth, panelHeight, 0x07111b, 0.8)
             .setStrokeStyle(3, 0x8fe7ff, 0.4);
@@ -132,8 +152,20 @@ export class BootScene extends Phaser.Scene {
             align: "center"
         }).setOrigin(0.5);
 
-        const listTop = panelTop + 130;
-        const listHeight = panelHeight - 245;
+        const qrBlockTop = panelTop + 118;
+        const qrBlockHeight = 138;
+        const qrBlockWidth = panelWidth - 100;
+        const qrBlockLeft = panelLeft + 50;
+        const qrBlockCenterY = qrBlockTop + (qrBlockHeight / 2);
+
+        this.add.rectangle(centerX, qrBlockCenterY, qrBlockWidth, qrBlockHeight, 0x0d2030, 0.9)
+            .setStrokeStyle(2, 0x89d8ff, 0.3);
+
+        this.createQrCodeBlock(qrBlockLeft + 96, qrBlockTop + 69, qrBlockWidth - 230);
+
+        const listTop = qrBlockTop + qrBlockHeight + 24;
+        const footerHeight = 108;
+        const listHeight = panelBottom - listTop - footerHeight - 26;
         const listWidth = panelWidth - 100;
         const listLeft = panelLeft + 50;
 
@@ -150,10 +182,17 @@ export class BootScene extends Phaser.Scene {
             maxRows: Math.max(1, Math.floor((listHeight - 36) / 54))
         };
 
-        this.startButton = this.add.rectangle(centerX, panelTop + panelHeight - 54, 320, 74, 0xffb347, 1)
+        this.connectionInfoText = this.add.text(centerX, panelBottom - 102, "En attente de joueurs...", {
+            fontSize: "18px",
+            color: "#cbe6f5",
+            fontFamily: "Arial",
+            align: "center"
+        }).setOrigin(0.5);
+
+        this.startButton = this.add.rectangle(centerX, panelBottom - 54, 320, 74, 0xffb347, 1)
             .setInteractive({ useHandCursor: true })
             .setStrokeStyle(4, 0xffefc2, 0.9);
-        this.startButtonText = this.add.text(centerX, panelTop + panelHeight - 54, "DEMARRER", {
+        this.startButtonText = this.add.text(centerX, panelBottom - 54, "DEMARRER", {
             fontSize: "30px",
             fontStyle: "bold",
             color: "#17212c",
@@ -167,13 +206,6 @@ export class BootScene extends Phaser.Scene {
                 this.socket.emit("startMatch");
             }
         });
-
-        this.connectionInfoText = this.add.text(centerX, panelTop + panelHeight - 108, "En attente de joueurs...", {
-            fontSize: "18px",
-            color: "#cbe6f5",
-            fontFamily: "Arial",
-            align: "center"
-        }).setOrigin(0.5);
 
         this.updateWaitingScreen();
     }
@@ -286,6 +318,105 @@ export class BootScene extends Phaser.Scene {
         glow.fillEllipse(width / 2, height * 0.82, width * 0.6, height * 0.18);
     }
 
+    createQrCodeBlock(qrLeft, qrTop, textWidth) {
+        this.removeQrCodeBlock();
+
+        const controllerUrl = this.getControllerUrl();
+        const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=0&data=${encodeURIComponent(controllerUrl)}`;
+        const qrSize = 118;
+
+        const qrBackground = document.createElement("div");
+        qrBackground.style.position = "fixed";
+        qrBackground.style.width = `${qrSize}px`;
+        qrBackground.style.height = `${qrSize}px`;
+        qrBackground.style.background = "#ffffff";
+        qrBackground.style.borderRadius = "10px";
+        qrBackground.style.display = "flex";
+        qrBackground.style.alignItems = "center";
+        qrBackground.style.justifyContent = "center";
+        qrBackground.style.zIndex = "9998";
+        qrBackground.style.boxShadow = "0 10px 24px rgba(0, 0, 0, 0.28)";
+
+        const qrImage = document.createElement("img");
+        qrImage.src = qrImageUrl;
+        qrImage.alt = "QR code pour rejoindre la manette";
+        qrImage.style.width = "104px";
+        qrImage.style.height = "104px";
+        qrImage.style.display = "block";
+        qrBackground.appendChild(qrImage);
+
+        const label = document.createElement("div");
+        label.style.position = "fixed";
+        label.style.width = `${Math.max(220, textWidth)}px`;
+        label.style.padding = "10px 14px";
+        label.style.borderRadius = "12px";
+        label.style.background = "rgba(7, 17, 27, 0.92)";
+        label.style.color = "#d8edf8";
+        label.style.fontFamily = "Arial, sans-serif";
+        label.style.fontSize = "15px";
+        label.style.lineHeight = "1.35";
+        label.style.textAlign = "left";
+        label.style.zIndex = "9998";
+        label.style.boxShadow = "0 10px 24px rgba(0, 0, 0, 0.22)";
+
+        label.innerHTML = [
+            "<div style=\"font-size:18px;font-weight:bold;color:#fff3b0;margin-bottom:6px;\">Connexion rapide</div>",
+            "<div>Scanne ce QR avec ton telephone pour ouvrir la manette.</div>",
+            `<div style="margin-top:8px;color:#ffffff;word-break:break-all;">${controllerUrl}</div>`
+        ].join("");
+
+        document.body.appendChild(qrBackground);
+        document.body.appendChild(label);
+
+        this.qrCodeElement = qrBackground;
+        this.qrCodeLabelElement = label;
+        this.positionQrCodeBlock(qrLeft, qrTop, qrSize);
+    }
+
+    positionQrCodeBlock(qrLeft, qrTop, qrSize) {
+        if (!this.qrCodeElement || !this.qrCodeLabelElement || !this.scale?.canvas) {
+            return;
+        }
+
+        const bounds = this.scale.canvas.getBoundingClientRect();
+        const left = bounds.left + qrLeft;
+        const top = bounds.top + qrTop;
+
+        this.qrCodeElement.style.left = `${Math.round(left)}px`;
+        this.qrCodeElement.style.top = `${Math.round(top)}px`;
+
+        this.qrCodeLabelElement.style.left = `${Math.round(left + qrSize + 18)}px`;
+        this.qrCodeLabelElement.style.top = `${Math.round(top + 4)}px`;
+    }
+
+    getControllerUrl() {
+        if (this.matchState?.controllerUrl) {
+            return this.matchState.controllerUrl;
+        }
+
+        const controllerPath = "/controller/";
+        const url = new URL(controllerPath, window.location.href);
+        return url.toString();
+    }
+
+    removeQrCodeBlock() {
+        if (this.qrCodeElement) {
+            this.qrCodeElement.remove();
+            this.qrCodeElement = null;
+        }
+
+        if (this.qrCodeLabelElement) {
+            this.qrCodeLabelElement.remove();
+            this.qrCodeLabelElement = null;
+        }
+    }
+
+    handleSceneResize() {
+        if (this.currentScreen === "waiting") {
+            this.renderWaitingScreen();
+        }
+    }
+
     clearScreen() {
         this.children.removeAll();
         this.playerListContainer.forEach((obj) => obj.destroy());
@@ -294,6 +425,12 @@ export class BootScene extends Phaser.Scene {
         this.startButtonText = null;
         this.connectionInfoText = null;
         this.listLayout = null;
+        this.removeQrCodeBlock();
+    }
+
+    handleSceneShutdown() {
+        this.scale.off("resize", this.handleSceneResize, this);
+        this.removeQrCodeBlock();
     }
 
     showError(message) {
