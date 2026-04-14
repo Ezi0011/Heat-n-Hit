@@ -19,7 +19,7 @@ const TILE_MAP = {
     ]
 };
 
-const CHAR_X = 706;
+const CHAR_START_X = 706;
 const CHAR_START_Y = 17;
 const CHAR_SPACING_VERTICAL = 23;
 const CHAR_SPACING_HORIZONTAL = 20;
@@ -60,15 +60,26 @@ export class GameScene extends Phaser.Scene {
             this.load.image("mountain-bg", "assets/mountain-bg.jpg");
         }
         this.load.image("mainAssets", "assets/mainAssets.png");
+    
+        this.load.on('complete', () => {
+            const tex = this.textures.get('mainAssets');
+            for (let i = 0; i < 6; i++) {
+                const y = CHAR_START_Y + (i * CHAR_SPACING_VERTICAL);
+                // .add(name, sourceIndex, x, y, width, height)
+                tex.add(`player_${i}`, 0, CHAR_START_X, y, 16, 16);
+            }
+        });
     }
 
     create() {
+        this.canvasTexture = this.textures.createCanvas('mapCanvas', this.worldWidth, this.worldHeight);
+
+        this.mapImage = this.add.image(0, 0, 'mapCanvas').setOrigin(0);
+        this.mapImage.setDepth(0);
+
         this.mapGraphics = this.add.graphics();
-//        this.createStatusText();
         this.setupFixedCamera();
         this.connectToServer();
-        this.canvasTexture = this.textures.createCanvas('mapCanvas', this.worldWidth, this.worldHeight);
-        this.add.image(0, 0, 'mapCanvas').setOrigin(0);
     }
 
     update() {
@@ -231,7 +242,7 @@ export class GameScene extends Phaser.Scene {
                 // --- LAYER 3: CHARACTERS (OVERLAY) ---
                 // Only draw characters if it's a SPAWN tile
                 if (tileType === TILE_TYPE.SPAWN) {
-                    const cx = CHAR_X;
+                    const cx = CHAR_START_X;
                     const cy = CHAR_START_Y + (charIndex * CHAR_SPACING_VERTICAL);
                     charIndex += 1;
 
@@ -269,13 +280,13 @@ export class GameScene extends Phaser.Scene {
             const serverPlayer = serverPlayers[id];
             const targetX = this.gridToWorldX(serverPlayer.gridX);
             const targetY = this.gridToWorldY(serverPlayer.gridY);
-            const fillColor = this.parseColor(serverPlayer.color);
 
             if (!this.players.has(id)) {
-                const player = this.add.rectangle(targetX, targetY, 36, 36, fillColor);
-                player.gridX = serverPlayer.gridX;
-                player.gridY = serverPlayer.gridY;
-                player.setDepth(20);
+
+                const colorIndex = serverPlayer.colorIndex || 0;
+                const player = this.add.sprite(targetX, targetY, "mainAssets", `player_${colorIndex}`);
+                player.setDisplaySize(48, 48);
+                player.setDepth(100);
 
                 const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
                     fontSize: "14px",
@@ -284,7 +295,7 @@ export class GameScene extends Phaser.Scene {
                     padding: { x: 4, y: 2 }
                 });
                 nameText.setOrigin(0.5, 1);
-                nameText.setDepth(30);
+                nameText.setDepth(150);
 
                 this.players.set(id, player);
                 this.playerNames.set(id, nameText);
@@ -293,7 +304,6 @@ export class GameScene extends Phaser.Scene {
 
             const player = this.players.get(id);
             const nameText = this.playerNames.get(id);
-            player.setFillStyle(fillColor);
 
             if (player.gridX === serverPlayer.gridX && player.gridY === serverPlayer.gridY) {
                 return;
