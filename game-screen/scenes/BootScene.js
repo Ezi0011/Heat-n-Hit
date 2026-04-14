@@ -41,10 +41,13 @@ export class BootScene extends Phaser.Scene {
         this.socket.on("matchState", (state) => {
             this.matchState = state;
 
-            if (state.state === "playing") {
+            if (state.phase !== "lobby") {
                 if (this.currentScreen !== "playing") {
                     this.currentScreen = "playing";
-                    this.scene.start("GameScene", { socket: this.socket });
+                    this.scene.start("GameScene", {
+                        socket: this.socket,
+                        matchState: state
+                    });
                 }
                 return;
             }

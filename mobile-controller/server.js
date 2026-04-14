@@ -15,7 +15,13 @@ let PORT = DEFAULT_PORT;
 const TILE_SIZE = 64;
 const MAP_COLS = 32;
 const MAP_ROWS = 18;
+const QUARTER_COUNT = 4;
 const MOVE_DURATION = 120;
+const GAME_TICK_MS = 100;
+const MOVE_TICKS = 2;
+const SHOOT_COOLDOWN_TICKS = 3;
+const PROJECTILE_MAX_TICKS = 50;
+const ROUND_TRANSITION_MS = 2800;
 
 const COLORS = [
   "#ff595e",
@@ -23,7 +29,17 @@ const COLORS = [
   "#8ac926",
   "#ffca3a",
   "#6a4c93",
-  "#ff924c"
+  "#ff924c",
+  "#ff85a1",
+  "#00bbf9",
+  "#00f5d4",
+  "#f15bb5",
+  "#9b5de5",
+  "#fb8500",
+  "#90be6d",
+  "#577590",
+  "#f94144",
+  "#43aa8b"
 ];
 
 app.use(express.static(ROOT_DIR));
@@ -35,94 +51,138 @@ app.get("/controller", (_req, res) => {
 
 async function startServer() {
   const { MapGenerator } = await import("../shared/MapGenerator.mjs");
+
   const SOLID_WALL = MapGenerator.MUR_SOLIDE;
   const DESTRUCTIBLE_WALL = MapGenerator.MUR_DESTRUCTIBLE;
-  const MAP = MapGenerator.createMap(MAP_COLS, MAP_ROWS);
   const SPAWNS = MapGenerator.generateSpawns(MAP_COLS, MAP_ROWS);
+  const MAX_PLAYERS = SPAWNS.length * QUARTER_COUNT;
+
+  const createFreshMap = () => MapGenerator.createMap(MAP_COLS, MAP_ROWS);
 
   const gameState = {
     tileSize: TILE_SIZE,
-    map: MAP,
+    map: createFreshMap(),
     players: {},
     projectiles: []
   };
 
   const matchState = {
     state: "lobby",
-    connectedPlayers: {},
-    activePlayers: {}
+    phase: "lobby",
+    message: "En attente de joueurs.",
+    registeredPlayers: {},
+    quarterGroups: Array.from({ length: QUARTER_COUNT }, () => []),
+    currentRound: null,
+    finalists: [],
+    winnerId: null,
+    transitionTimer: null
   };
+
+  function clearTransitionTimer() {
+    if (matchState.transitionTimer) {
+      clearTimeout(matchState.transitionTimer);
+      matchState.transitionTimer = null;
+    }
+  }
+
+  function scheduleTransition(callback, delayMs = ROUND_TRANSITION_MS) {
+    clearTransitionTimer();
+    matchState.transitionTimer = setTimeout(() => {
+      matchState.transitionTimer = null;
+      callback();
+    }, delayMs);
+  }
+
+  function getPublicRegisteredPlayers() {
+    const entries = Object.values(matchState.registeredPlayers)
+      .sort((left, right) => left.order - right.order)
+      .map((player) => [
+        player.id,
+        {
+          id: player.id,
+          name: player.name,
+          color: player.color,
+          status: player.status,
+          quarterIndex: player.quarterIndex,
+          finalQualified: player.finalQualified
+        }
+      ]);
+
+    return Object.fromEntries(entries);
+  }
+
+  function buildMatchStatePayload() {
+    const publicPlayers = getPublicRegisteredPlayers();
+    const finalists = matchState.finalists
+      .map((playerId) => matchState.registeredPlayers[playerId])
+      .filter(Boolean)
+      .map((player) => ({
+        id: player.id,
+        name: player.name,
+        color: player.color
+      }));
+
+    return {
+      state: matchState.state,
+      phase: matchState.phase,
+      message: matchState.message,
+      connectedPlayers: publicPlayers,
+      registeredPlayers: publicPlayers,
+      activePlayers: Object.keys(gameState.players),
+      quarterGroups: matchState.quarterGroups.map((group) =>
+        group
+          .map((playerId) => matchState.registeredPlayers[playerId])
+          .filter(Boolean)
+          .map((player) => ({
+            id: player.id,
+            name: player.name,
+            color: player.color
+          }))
+      ),
+      currentRound: matchState.currentRound
+        ? {
+            type: matchState.currentRound.type,
+            index: matchState.currentRound.index,
+            label: matchState.currentRound.label,
+            qualifierCount: matchState.currentRound.qualifierCount,
+            participantIds: [...matchState.currentRound.participantIds]
+          }
+        : null,
+      finalists,
+      winner: matchState.winnerId && matchState.registeredPlayers[matchState.winnerId]
+        ? {
+            id: matchState.winnerId,
+            name: matchState.registeredPlayers[matchState.winnerId].name,
+            color: matchState.registeredPlayers[matchState.winnerId].color
+          }
+        : null
+    };
+  }
 
   function emitGameState() {
     io.emit("gameState", gameState);
   }
 
   function emitMatchState() {
-    io.emit("matchState", {
-      state: matchState.state,
-      connectedPlayers: matchState.connectedPlayers,
-      activePlayers: Object.keys(matchState.activePlayers)
-    });
+    io.emit("matchState", buildMatchStatePayload());
   }
 
-  function checkForWinner() {
-    if (matchState.state !== "playing") {
-      return;
-    }
-
-    const aliveIds = Object.keys(gameState.players);
-    if (aliveIds.length === 1) {
-      const winnerId = aliveIds[0];
-      const winnerPlayer = gameState.players[winnerId];
-      const winnerSocket = io.sockets.sockets.get(winnerId);
-
-      matchState.state = "finished";
-      emitMatchState();
-
-      if (winnerSocket) {
-        winnerSocket.emit("gameWon", {
-          winnerName: winnerPlayer.name
-        });
-      }
-
-      io.emit("playerWon", {
-        winnerId,
-        winnerName: winnerPlayer.name
-      });
-      return;
-    }
-
-    if (aliveIds.length === 0) {
-      matchState.state = "finished";
-      emitMatchState();
-    }
+  function getTile(gridX, gridY) {
+    return gameState.map[gridY]?.[gridX];
   }
 
-  function getUsedSpawnCount() {
-    return Object.keys(gameState.players).length;
+  function isBlocked(gridX, gridY) {
+    const tile = getTile(gridX, gridY);
+    return tile === SOLID_WALL || tile === DESTRUCTIBLE_WALL;
   }
 
-  function createPlayer(socketId, name) {
-    const index = getUsedSpawnCount();
-
-    if (index >= SPAWNS.length) {
-      return null;
+  function destroyWall(gridX, gridY) {
+    if (getTile(gridX, gridY) !== DESTRUCTIBLE_WALL) {
+      return false;
     }
 
-    const spawn = SPAWNS[index];
-
-    return {
-      id: socketId,
-      name: name || "Joueur",
-      color: COLORS[index % COLORS.length],
-      gridX: spawn.gridX,
-      gridY: spawn.gridY,
-      moveDuration: MOVE_DURATION,
-      direction: "right",
-      movingDirection: null,
-      moveTimer: 0,
-      shootCooldown: 0
-    };
+    gameState.map[gridY][gridX] = 0;
+    return true;
   }
 
   function wrapGridX(gridX) {
@@ -149,37 +209,369 @@ async function startServer() {
     return gridY;
   }
 
-  function getTile(gridX, gridY) {
-    return gameState.map[gridY]?.[gridX];
+  function resetArena() {
+    gameState.map = createFreshMap();
+    gameState.projectiles = [];
+    gameState.players = {};
   }
 
-  function isBlocked(gridX, gridY) {
-    const tile = getTile(gridX, gridY);
-    return tile === SOLID_WALL || tile === DESTRUCTIBLE_WALL;
+  function disableAllPlayers() {
+    Object.values(gameState.players).forEach((player) => {
+      player.movingDirection = null;
+      player.moveTimer = 0;
+    });
+    gameState.projectiles = [];
   }
 
-  function destroyWall(gridX, gridY) {
-    if (getTile(gridX, gridY) !== DESTRUCTIBLE_WALL) {
-      return false;
+  function getQualifierCount(groupSize) {
+    if (groupSize <= 0) {
+      return 0;
     }
 
-    gameState.map[gridY][gridX] = 0;
-    return true;
+    if (matchState.currentRound?.type === "final") {
+      return 1;
+    }
+
+    return Math.max(1, Math.ceil(groupSize * 0.25));
   }
 
-  function shootProjectile(player) {
-    const offsets = {
-      left: { dx: -1, dy: 0 },
-      right: { dx: 1, dy: 0 },
-      up: { dx: 0, dy: -1 },
-      down: { dx: 0, dy: 1 }
+  function buildQuarterGroups(playerIds) {
+    const groups = Array.from({ length: QUARTER_COUNT }, () => []);
+    let cursor = 0;
+
+    for (let groupIndex = 0; groupIndex < QUARTER_COUNT; groupIndex += 1) {
+      const playersRemaining = playerIds.length - cursor;
+      const groupsRemaining = QUARTER_COUNT - groupIndex;
+
+      if (playersRemaining <= 0) {
+        break;
+      }
+
+      const targetGroupSize = Math.min(
+        SPAWNS.length,
+        Math.ceil(playersRemaining / groupsRemaining)
+      );
+
+      groups[groupIndex] = playerIds.slice(cursor, cursor + targetGroupSize);
+      cursor += targetGroupSize;
+    }
+
+    return groups;
+  }
+
+  function registerPlayer(socketId, name) {
+    const playerCount = Object.keys(matchState.registeredPlayers).length;
+    if (playerCount >= MAX_PLAYERS) {
+      return null;
+    }
+
+    const player = {
+      id: socketId,
+      name: name || "Joueur",
+      color: COLORS[playerCount % COLORS.length],
+      order: playerCount,
+      status: "waiting",
+      quarterIndex: null,
+      finalQualified: false
     };
 
-    const offset = offsets[player.direction];
-    if (!offset) {
+    matchState.registeredPlayers[socketId] = player;
+    return player;
+  }
+
+  function createActivePlayer(playerId, spawnIndex) {
+    const registeredPlayer = matchState.registeredPlayers[playerId];
+    const spawn = SPAWNS[spawnIndex];
+
+    return {
+      id: playerId,
+      name: registeredPlayer.name,
+      color: registeredPlayer.color,
+      gridX: spawn.gridX,
+      gridY: spawn.gridY,
+      moveDuration: MOVE_DURATION,
+      direction: "right",
+      movingDirection: null,
+      moveTimer: 0,
+      shootCooldown: 0
+    };
+  }
+
+  function notifyRoundQualified(playerIds, roundLabel) {
+    playerIds.forEach((playerId) => {
+      const playerSocket = io.sockets.sockets.get(playerId);
+      if (!playerSocket) {
+        return;
+      }
+
+      playerSocket.emit("roundQualified", {
+        roundLabel
+      });
+    });
+  }
+
+  function updateStatusesForQuarterSetup(roundIndex, participantIds) {
+    Object.values(matchState.registeredPlayers).forEach((player) => {
+      if (matchState.finalists.includes(player.id)) {
+        player.status = "qualified";
+        player.finalQualified = true;
+        return;
+      }
+
+      if (participantIds.includes(player.id)) {
+        player.status = "playing";
+        return;
+      }
+
+      if (player.quarterIndex !== null && player.quarterIndex > roundIndex + 1) {
+        player.status = "queued";
+      }
+    });
+  }
+
+  function updateStatusesForFinalSetup(participantIds) {
+    Object.values(matchState.registeredPlayers).forEach((player) => {
+      if (participantIds.includes(player.id)) {
+        player.status = "playing";
+        player.finalQualified = true;
+        return;
+      }
+
+      if (matchState.finalists.includes(player.id)) {
+        player.status = "qualified";
+        player.finalQualified = true;
+      }
+    });
+  }
+
+  function startRound(roundConfig) {
+    clearTransitionTimer();
+    resetArena();
+
+    matchState.state = "playing";
+    matchState.currentRound = roundConfig;
+    matchState.message = `${roundConfig.label} en cours`;
+
+    if (roundConfig.type === "quarterfinal") {
+      updateStatusesForQuarterSetup(roundConfig.index - 1, roundConfig.participantIds);
+    } else {
+      updateStatusesForFinalSetup(roundConfig.participantIds);
+    }
+
+    roundConfig.participantIds.forEach((playerId, spawnIndex) => {
+      if (!matchState.registeredPlayers[playerId]) {
+        return;
+      }
+
+      gameState.players[playerId] = createActivePlayer(playerId, spawnIndex);
+    });
+
+    emitMatchState();
+    emitGameState();
+    checkRoundCompletion();
+  }
+
+  function goToNextQuarter(nextQuarterIndex) {
+    if (nextQuarterIndex >= matchState.quarterGroups.length) {
+      startFinalRound();
       return;
     }
 
+    const participantIds = matchState.quarterGroups[nextQuarterIndex]
+      .filter((playerId) => Boolean(matchState.registeredPlayers[playerId]));
+
+    const label = `Quart ${nextQuarterIndex + 1}/4`;
+
+    if (participantIds.length === 0) {
+      matchState.currentRound = {
+        type: "quarterfinal",
+        index: nextQuarterIndex + 1,
+        label,
+        qualifierCount: 0,
+        participantIds: []
+      };
+      matchState.state = "transition";
+      matchState.message = `${label} vide, passage au suivant`;
+      emitMatchState();
+      scheduleTransition(() => goToNextQuarter(nextQuarterIndex + 1), 1200);
+      return;
+    }
+
+    startRound({
+      type: "quarterfinal",
+      index: nextQuarterIndex + 1,
+      label,
+      qualifierCount: getQualifierCount(participantIds.length),
+      participantIds
+    });
+  }
+
+  function startFinalRound() {
+    const participantIds = matchState.finalists
+      .filter((playerId) => Boolean(matchState.registeredPlayers[playerId]));
+
+    if (participantIds.length === 0) {
+      matchState.phase = "completed";
+      matchState.state = "completed";
+      matchState.currentRound = {
+        type: "final",
+        index: 1,
+        label: "Finale",
+        qualifierCount: 1,
+        participantIds: []
+      };
+      matchState.message = "Finale impossible: aucun qualifie.";
+      emitMatchState();
+      emitGameState();
+      return;
+    }
+
+    matchState.phase = "final";
+
+    startRound({
+      type: "final",
+      index: 1,
+      label: "Finale",
+      qualifierCount: 1,
+      participantIds
+    });
+  }
+
+  function startTournament() {
+    const registeredIds = Object.values(matchState.registeredPlayers)
+      .sort((left, right) => left.order - right.order)
+      .map((player) => player.id)
+      .slice(0, MAX_PLAYERS);
+
+    if (registeredIds.length === 0) {
+      return;
+    }
+
+    clearTransitionTimer();
+    matchState.phase = "quarterfinals";
+    matchState.state = "transition";
+    matchState.message = "Preparation du tournoi...";
+    matchState.winnerId = null;
+    matchState.finalists = [];
+    matchState.currentRound = null;
+    matchState.quarterGroups = buildQuarterGroups(registeredIds);
+
+    Object.values(matchState.registeredPlayers).forEach((player) => {
+      player.status = "queued";
+      player.finalQualified = false;
+      player.quarterIndex = null;
+    });
+
+    matchState.quarterGroups.forEach((group, groupIndex) => {
+      group.forEach((playerId) => {
+        const player = matchState.registeredPlayers[playerId];
+        if (player) {
+          player.quarterIndex = groupIndex + 1;
+        }
+      });
+    });
+
+    emitMatchState();
+    goToNextQuarter(0);
+  }
+
+  function finishTournament(survivorIds) {
+    disableAllPlayers();
+    matchState.phase = "completed";
+    matchState.state = "completed";
+
+    Object.values(matchState.registeredPlayers).forEach((player) => {
+      if (survivorIds.includes(player.id)) {
+        player.status = "winner";
+        return;
+      }
+
+      if (player.finalQualified) {
+        player.status = "eliminated";
+      }
+    });
+
+    if (survivorIds.length === 1) {
+      const winnerId = survivorIds[0];
+      const winner = matchState.registeredPlayers[winnerId];
+      matchState.winnerId = winnerId;
+      matchState.message = `${winner.name} remporte le tournoi`;
+
+      const winnerSocket = io.sockets.sockets.get(winnerId);
+      if (winnerSocket) {
+        winnerSocket.emit("gameWon", {
+          winnerName: winner.name
+        });
+      }
+
+      io.emit("playerWon", {
+        winnerId,
+        winnerName: winner.name
+      });
+    } else {
+      matchState.winnerId = null;
+      matchState.message = "Tournoi termine sans vainqueur.";
+    }
+
+    emitMatchState();
+    emitGameState();
+  }
+
+  function finishQuarterRound(survivorIds) {
+    const currentRound = matchState.currentRound;
+    disableAllPlayers();
+
+    currentRound.participantIds.forEach((playerId) => {
+      const player = matchState.registeredPlayers[playerId];
+      if (!player) {
+        return;
+      }
+
+      if (survivorIds.includes(playerId)) {
+        player.status = "qualified";
+        player.finalQualified = true;
+
+        if (!matchState.finalists.includes(playerId)) {
+          matchState.finalists.push(playerId);
+        }
+        return;
+      }
+
+      player.status = "eliminated";
+    });
+
+    matchState.state = "transition";
+    matchState.message = `${currentRound.label} termine. ${survivorIds.length} qualifie(s) pour la finale.`;
+
+    notifyRoundQualified(survivorIds, currentRound.label);
+    emitMatchState();
+    emitGameState();
+
+    scheduleTransition(() => goToNextQuarter(currentRound.index), ROUND_TRANSITION_MS);
+  }
+
+  function checkRoundCompletion() {
+    if (matchState.state !== "playing" || !matchState.currentRound) {
+      return;
+    }
+
+    const aliveIds = matchState.currentRound.participantIds
+      .filter((playerId) => Boolean(gameState.players[playerId]));
+    const targetCount = matchState.currentRound.qualifierCount;
+
+    if (aliveIds.length > targetCount) {
+      return;
+    }
+
+    if (matchState.currentRound.type === "final") {
+      finishTournament(aliveIds);
+      return;
+    }
+
+    finishQuarterRound(aliveIds);
+  }
+
+  function shootProjectile(player) {
     const projectile = {
       id: Date.now() + Math.random(),
       ownerId: player.id,
@@ -187,7 +579,7 @@ async function startServer() {
       gridY: player.gridY,
       direction: player.direction,
       age: 0,
-      maxTime: 50,
+      maxTime: PROJECTILE_MAX_TICKS,
       color: player.color
     };
 
@@ -196,18 +588,18 @@ async function startServer() {
 
   function handlePlayerHit(victimId, killerId) {
     const victim = gameState.players[victimId];
-    const killer = gameState.players[killerId];
-
-    if (!victim || !killer) {
+    if (!victim) {
       return;
     }
 
+    const killer = matchState.registeredPlayers[killerId];
     const victimSocket = io.sockets.sockets.get(victimId);
+
     if (victimSocket) {
       victimSocket.emit("gameOver", {
         reason: "hit",
-        killerColor: killer.color,
-        killerName: killer.name
+        killerColor: killer?.color || "#ffffff",
+        killerName: killer?.name || "Inconnu"
       });
     }
 
@@ -215,16 +607,19 @@ async function startServer() {
       victimId,
       killerId,
       victimColor: victim.color,
-      killerColor: killer.color,
+      killerColor: killer?.color || "#ffffff",
       victimName: victim.name,
-      killerName: killer.name
+      killerName: killer?.name || "Inconnu"
     });
 
+    if (matchState.registeredPlayers[victimId]) {
+      matchState.registeredPlayers[victimId].status = "eliminated";
+    }
+
     delete gameState.players[victimId];
-    delete matchState.activePlayers[victimId];
-    console.log(`Player ${victimId} was hit by ${killerId}`);
     emitGameState();
-    checkForWinner();
+    emitMatchState();
+    checkRoundCompletion();
   }
 
   function updateProjectiles() {
@@ -236,45 +631,35 @@ async function startServer() {
     };
 
     gameState.projectiles = gameState.projectiles.filter((projectile) => {
-      projectile.age++;
+      projectile.age += 1;
 
-      // Vérifie la durée de vie (20 secondes = 200 ticks de 100ms)
       if (projectile.age >= projectile.maxTime) {
         return false;
       }
 
       const offset = offsets[projectile.direction];
+      if (!offset) {
+        return false;
+      }
+
       const nextGridX = wrapGridX(projectile.gridX + offset.dx);
       const nextGridY = wrapGridY(projectile.gridY + offset.dy);
 
-      for (const [playerId, player] of Object.entries(gameState.players)) {
-        if (player.gridX === nextGridX && player.gridY === nextGridY) {
-          handlePlayerHit(playerId, projectile.ownerId);
-          return false;
-        }
+      const victimEntry = Object.entries(gameState.players).find(([, player]) => (
+        player.gridX === nextGridX && player.gridY === nextGridY
+      ));
+
+      if (victimEntry) {
+        handlePlayerHit(victimEntry[0], projectile.ownerId);
+        return false;
       }
 
-      const nextTile = getTile(nextGridX, nextGridY);
-      if (nextTile === DESTRUCTIBLE_WALL) {
+      if (getTile(nextGridX, nextGridY) === DESTRUCTIBLE_WALL) {
         destroyWall(nextGridX, nextGridY);
         return false;
       }
 
-      if (nextTile === SOLID_WALL) {
-        return false;
-      }
-
-      // Collision avec les obstacles (valeur 1 sur la map)
-      if (false && isBlocked(nextGridX, nextGridY)) {
-        if (MAP[nextGridY][nextGridX] === 2) {
-          MAP[nextGridY][nextGridX] = 0; // Détruire l'obstacle destructible
-          io.emit("mapUpdated", {
-            gridX: nextGridX,
-            gridY: nextGridY,
-            value: 0
-          });
-        }
-
+      if (getTile(nextGridX, nextGridY) === SOLID_WALL) {
         return false;
       }
 
@@ -282,25 +667,6 @@ async function startServer() {
       projectile.gridY = nextGridY;
       return true;
     });
-  }
-
-  function updateGame() {
-    updateProjectiles();
-
-    for (const player of Object.values(gameState.players)) {
-      player.shootCooldown = Math.max(0, player.shootCooldown - 1);
-
-      if (player.movingDirection && player.shootCooldown === 0) {
-        player.moveTimer--;
-        if (player.moveTimer <= 0) {
-          if (tryMovePlayer(player, player.movingDirection)) {
-            player.moveTimer = 2; // move every 200ms (2 ticks at 100ms each)
-          }
-        }
-      }
-    }
-
-    emitGameState();
   }
 
   function tryMovePlayer(player, direction) {
@@ -312,7 +678,6 @@ async function startServer() {
     };
 
     const offset = offsets[direction];
-
     if (!offset) {
       return false;
     }
@@ -326,48 +691,99 @@ async function startServer() {
 
     player.gridX = nextGridX;
     player.gridY = nextGridY;
-
     return true;
+  }
+
+  function updateGame() {
+    if (matchState.state !== "playing") {
+      return;
+    }
+
+    updateProjectiles();
+
+    Object.values(gameState.players).forEach((player) => {
+      player.shootCooldown = Math.max(0, player.shootCooldown - 1);
+
+      if (!player.movingDirection) {
+        return;
+      }
+
+      player.moveTimer -= 1;
+      if (player.moveTimer > 0) {
+        return;
+      }
+
+      if (tryMovePlayer(player, player.movingDirection)) {
+        player.moveTimer = MOVE_TICKS;
+      } else {
+        player.moveTimer = 1;
+      }
+    });
+
+    emitGameState();
+  }
+
+  function removePlayerFromFutureRounds(playerId) {
+    matchState.quarterGroups = matchState.quarterGroups.map((group) =>
+      group.filter((id) => id !== playerId)
+    );
+    matchState.finalists = matchState.finalists.filter((id) => id !== playerId);
+  }
+
+  function unregisterPlayer(socketId) {
+    const player = matchState.registeredPlayers[socketId];
+    if (!player) {
+      return;
+    }
+
+    removePlayerFromFutureRounds(socketId);
+    delete matchState.registeredPlayers[socketId];
+
+    if (Object.keys(matchState.registeredPlayers).length === 0 && matchState.phase === "lobby") {
+      matchState.state = "lobby";
+      matchState.message = "En attente de joueurs.";
+    }
   }
 
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
     socket.emit("gameState", gameState);
-    socket.emit("matchState", {
-      state: matchState.state,
-      connectedPlayers: matchState.connectedPlayers,
-      activePlayers: Object.keys(matchState.activePlayers)
-    });
+    socket.emit("matchState", buildMatchStatePayload());
 
     socket.on("joinAsController", ({ name } = {}) => {
-      if (matchState.state === "playing") {
-        socket.emit("matchError", "La partie a déjà commencé");
+      if (matchState.phase !== "lobby" && matchState.state !== "waiting") {
+        socket.emit("matchError", "Le tournoi a deja commence.");
         return;
       }
 
-      if (matchState.connectedPlayers[socket.id]) {
+      if (matchState.registeredPlayers[socket.id]) {
+        const existingPlayer = matchState.registeredPlayers[socket.id];
         socket.emit("joined", {
-          playerId: socket.id,
-          name: matchState.connectedPlayers[socket.id].name
+          playerId: existingPlayer.id,
+          name: existingPlayer.name,
+          color: existingPlayer.color
         });
         return;
       }
 
-      matchState.connectedPlayers[socket.id] = {
-        id: socket.id,
-        name: name || "Joueur"
-      };
+      const player = registerPlayer(socket.id, name);
+      if (!player) {
+        socket.emit("gameFull");
+        return;
+      }
 
       if (matchState.state === "lobby") {
         matchState.state = "waiting";
+        matchState.message = "Les joueurs rejoignent le lobby.";
       }
 
       socket.emit("joined", {
-        playerId: socket.id,
-        name: matchState.connectedPlayers[socket.id].name
+        playerId: player.id,
+        name: player.name,
+        color: player.color
       });
 
-      console.log("Player joined lobby:", socket.id, "Name:", name);
+      console.log("Player joined lobby:", socket.id, "Name:", player.name);
       emitMatchState();
     });
 
@@ -376,62 +792,28 @@ async function startServer() {
         return;
       }
 
-      const connectedIds = Object.keys(matchState.connectedPlayers);
-      if (connectedIds.length === 0) {
-        return;
-      }
-
-      matchState.state = "playing";
-      gameState.players = {};
-      matchState.activePlayers = {};
-
-      let spawnIndex = 0;
-      for (const socketId of connectedIds) {
-        if (spawnIndex >= SPAWNS.length) {
-          break;
-        }
-
-        const connectedPlayer = matchState.connectedPlayers[socketId];
-        const spawn = SPAWNS[spawnIndex];
-        const playerData = {
-          id: socketId,
-          name: connectedPlayer.name,
-          color: COLORS[spawnIndex % COLORS.length],
-          gridX: spawn.gridX,
-          gridY: spawn.gridY,
-          moveDuration: MOVE_DURATION,
-          direction: "right",
-          movingDirection: null,
-          moveTimer: 0,
-          shootCooldown: 0,
-          alive: true
-        };
-
-        gameState.players[socketId] = playerData;
-        matchState.activePlayers[socketId] = true;
-        spawnIndex += 1;
-      }
-
-      matchState.connectedPlayers = {};
-      emitMatchState();
-      emitGameState();
-      checkForWinner();
+      startTournament();
     });
 
     socket.on("move", ({ direction } = {}) => {
-      const player = gameState.players[socket.id];
+      if (matchState.state !== "playing") {
+        return;
+      }
 
+      const player = gameState.players[socket.id];
       if (!player) {
         return;
       }
 
       player.direction = direction;
       player.movingDirection = direction;
+      if (player.moveTimer <= 0) {
+        player.moveTimer = 0;
+      }
     });
 
     socket.on("stopMove", () => {
       const player = gameState.players[socket.id];
-
       if (!player) {
         return;
       }
@@ -440,35 +822,35 @@ async function startServer() {
     });
 
     socket.on("shoot", () => {
-      const player = gameState.players[socket.id];
+      if (matchState.state !== "playing") {
+        return;
+      }
 
+      const player = gameState.players[socket.id];
       if (!player || player.shootCooldown > 0) {
         return;
       }
 
       shootProjectile(player);
-      player.shootCooldown = 3; 
+      player.shootCooldown = SHOOT_COOLDOWN_TICKS;
       emitGameState();
     });
 
     socket.on("disconnect", () => {
-      if (matchState.connectedPlayers[socket.id]) {
-        delete matchState.connectedPlayers[socket.id];
-        console.log("Player removed from lobby:", socket.id);
-        emitMatchState();
-        return;
-      }
+      const wasActive = Boolean(gameState.players[socket.id]);
 
-      if (gameState.players[socket.id]) {
+      if (wasActive) {
         delete gameState.players[socket.id];
-        delete matchState.activePlayers[socket.id];
-        console.log("Player removed from game:", socket.id);
-        emitGameState();
-        checkForWinner();
-        emitMatchState();
-        return;
       }
 
+      unregisterPlayer(socket.id);
+
+      if (wasActive) {
+        emitGameState();
+        checkRoundCompletion();
+      }
+
+      emitMatchState();
       console.log("Client disconnected:", socket.id);
     });
   });
@@ -479,23 +861,25 @@ async function startServer() {
       console.log(`Game screen: http://localhost:${PORT}/`);
       console.log(`Controller: http://localhost:${PORT}/controller/`);
 
-      setInterval(updateGame, 100);
+      setInterval(updateGame, GAME_TICK_MS);
     });
   }
 
-  server.on("error", (err) => {
-    if (err.code === "EADDRINUSE") {
+  server.on("error", (error) => {
+    if (error.code === "EADDRINUSE") {
       console.warn(`Port ${PORT} already in use, trying next port...`);
       PORT += 1;
+
       if (PORT > DEFAULT_PORT + 10) {
         console.error("No available ports found in range", DEFAULT_PORT, DEFAULT_PORT + 10);
         process.exit(1);
       }
+
       listen();
       return;
     }
 
-    throw err;
+    throw error;
   });
 
   listen();

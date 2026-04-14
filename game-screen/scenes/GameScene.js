@@ -16,11 +16,26 @@ export class GameScene extends Phaser.Scene {
         this.mapGraphics = null;
         this.socket = null;
         this.statusText = null;
+        this.roundText = null;
+        this.roundTextValue = "";
+        this.roundTextHideEvent = null;
+        this.matchState = null;
+        this.pendingMatchState = null;
         this.hasWinner = false;
         this.victoryOverlay = null;
         this.victoryWinnerText = null;
         this.victorySubtitleText = null;
         this.victoryRays = [];
+    }
+
+    init(data) {
+        if (data?.socket) {
+            this.socket = data.socket;
+        }
+
+        if (data?.matchState) {
+            this.pendingMatchState = data.matchState;
+        }
     }
 
     preload() {
@@ -31,13 +46,19 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         this.mapGraphics = this.add.graphics();
-        this.createStatusText();
+        //this.createStatusText();
+        this.createRoundText();
         this.setupFixedCamera();
         this.connectToServer();
+
+        if (this.pendingMatchState) {
+            this.applyMatchState(this.pendingMatchState);
+            this.pendingMatchState = null;
+        }
     }
 
     update() {
-        if (!this.hasWinner || !this.victoryRays.length) {
+        if (!this.hasWinner || this.victoryRays.length === 0) {
             return;
         }
 
@@ -61,24 +82,48 @@ export class GameScene extends Phaser.Scene {
         this.statusText.setDepth(100);
     }
 
+    createRoundText() {
+        this.roundText = this.add.text(this.scale.width / 2, 20, "", {
+            color: "#fff3b0",
+            fontSize: "26px",
+            backgroundColor: "#07111b",
+            padding: {
+                x: 14,
+                y: 8
+            }
+        });
+
+        this.roundText.setOrigin(0.5, 0);
+        this.roundText.setScrollFactor(0);
+        this.roundText.setDepth(110);
+        this.roundText.setVisible(false);
+    }
+
     connectToServer() {
-        if (typeof window.io !== "function") {
-            this.setStatus("Socket.IO client not found.\nStart the Node server.");
-            return;
+        if (!this.socket) {
+            if (typeof window.io !== "function") {
+                this.setStatus("Socket.IO client not found.\nStart the Node server.");
+                return;
+            }
+
+            this.socket = window.io();
         }
 
-        this.socket = window.io();
-
         this.socket.on("connect", () => {
-            this.setStatus("Screen connected.\nOpen /controller on phone.");
+            this.refreshStatus();
         });
 
         this.socket.on("disconnect", () => {
             this.setStatus("Disconnected from server.");
+            this.setRoundText("");
         });
 
         this.socket.on("gameState", (state) => {
             this.applyGameState(state);
+        });
+
+        this.socket.on("matchState", (state) => {
+            this.applyMatchState(state);
         });
 
         this.socket.on("playerHit", (data) => {
@@ -88,6 +133,11 @@ export class GameScene extends Phaser.Scene {
         this.socket.on("playerWon", (data) => {
             this.showVictoryOverlay(data.winnerName);
         });
+    }
+
+    applyMatchState(state) {
+        this.matchState = state;
+        this.refreshStatus();
     }
 
     applyGameState(state) {
@@ -117,18 +167,56 @@ export class GameScene extends Phaser.Scene {
 
         this.syncPlayers(state.players || {});
         this.syncProjectiles(state.projectiles || []);
+        this.refreshStatus();
+    }
 
-        const playerEntries = Object.entries(state.players || {});
-        if (!this.hasWinner && playerEntries.length === 1) {
-            const [, winner] = playerEntries[0];
-            this.showVictoryOverlay(winner.name);
+    refreshStatus() {
+        if (this.hasWinner) {
             return;
         }
 
-        if (!this.hasWinner) {
-            const playerCount = playerEntries.length;
-            this.setStatus(`Screen connected.\nPlayers: ${playerCount}\nOpen /controller on phone.`);
+        if (!this.matchState) {
+            this.setStatus("Screen connected.\nWaiting for match state...");
+            this.setRoundText("");
+            return;
         }
+
+        const playerCount = (this.matchState.activePlayers || []).length;
+        const roundLabel = this.matchState.currentRound?.label || "";
+        const roundMessage = this.matchState.message || "";
+
+        if (roundLabel) {
+            const qualifierCount = this.matchState.currentRound?.qualifierCount;
+            const qualifierText = this.matchState.phase === "quarterfinals" && typeof qualifierCount === "number"
+                ? ` - ${qualifierCount} qualifie(s)`
+                : "";
+            this.setRoundText(`${roundLabel}${qualifierText}`);
+        } else {
+            this.setRoundText("");
+        }
+
+        const lines = [];
+        lines.push(`Etat: ${this.matchState.state}`);
+
+        if (roundMessage) {
+            lines.push(roundMessage);
+        }
+
+        if (this.matchState.phase === "quarterfinals") {
+            lines.push(`Finalistes actuels: ${this.matchState.finalists?.length || 0}`);
+        }
+
+        if (this.matchState.phase === "final") {
+            lines.push("Finale en cours");
+        }
+
+        if (this.matchState.state === "completed" && this.matchState.winner) {
+            lines.push(`Vainqueur: ${this.matchState.winner.name}`);
+        } else {
+            lines.push(`Joueurs sur l'arene: ${playerCount}`);
+        }
+
+        this.setStatus(lines.join("\n"));
     }
 
     hasMapContentChanged(nextMap) {
@@ -276,7 +364,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     syncProjectiles(serverProjectiles) {
-        const activeIds = new Set(serverProjectiles.map((p) => p.id));
+        const activeIds = new Set(serverProjectiles.map((projectile) => projectile.id));
 
         serverProjectiles.forEach((serverProjectile) => {
             const targetX = this.gridToWorldX(serverProjectile.gridX);
@@ -324,7 +412,7 @@ export class GameScene extends Phaser.Scene {
 
     showHitPopup(data) {
         const message = `${data.killerName} killed ${data.victimName}!`;
-        const text = this.add.text(this.cameras.main.centerX, 40, message, {
+        const text = this.add.text(this.cameras.main.centerX, 90, message, {
             fontSize: "28px",
             color: "#ffffff",
             backgroundColor: "#000000",
@@ -353,6 +441,7 @@ export class GameScene extends Phaser.Scene {
 
         this.hasWinner = true;
         this.setStatus("");
+        this.setRoundText("");
 
         const width = this.scale.width;
         const height = this.scale.height;
@@ -396,13 +485,13 @@ export class GameScene extends Phaser.Scene {
             wordWrap: { width: 620, useAdvancedWrap: true }
         }).setOrigin(0.5);
 
-        this.victorySubtitleText = this.add.text(centerX, centerY + 82, "est le dernier joueur en lice", {
+        this.victorySubtitleText = this.add.text(centerX, centerY + 82, "remporte le tournoi", {
             fontSize: "24px",
             color: "#dceef7",
             fontFamily: "Arial"
         }).setOrigin(0.5);
 
-        const hint = this.add.text(centerX, centerY + 130, "Partie terminee", {
+        const hint = this.add.text(centerX, centerY + 130, "Tournoi termine", {
             fontSize: "20px",
             color: "#ffcf80",
             fontFamily: "Arial",
@@ -485,5 +574,46 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.statusText.setText(message);
+    }
+
+    setRoundText(message) {
+        if (!this.roundText) {
+            return;
+        }
+
+        if (this.roundTextHideEvent) {
+            this.roundTextHideEvent.remove(false);
+            this.roundTextHideEvent = null;
+        }
+
+        if (!message) {
+            this.roundTextValue = "";
+            this.roundText.setText("");
+            this.roundText.setAlpha(1);
+            this.roundText.setVisible(false);
+            return;
+        }
+
+        if (message === this.roundTextValue) {
+            return;
+        }
+
+        this.roundTextValue = message;
+        this.roundText.setText(message);
+        this.roundText.setAlpha(1);
+        this.roundText.setVisible(true);
+
+        this.roundTextHideEvent = this.time.delayedCall(2200, () => {
+            this.tweens.add({
+                targets: this.roundText,
+                alpha: 0,
+                duration: 250,
+                onComplete: () => {
+                    this.roundText.setVisible(false);
+                    this.roundText.setAlpha(1);
+                }
+            });
+            this.roundTextHideEvent = null;
+        });
     }
 }

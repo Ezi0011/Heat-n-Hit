@@ -1,4 +1,4 @@
-console.log("controleur chargé");
+console.log("controller loaded");
 
 const playerInfo = document.getElementById("playerInfo");
 const buttons = document.querySelectorAll(".dir");
@@ -9,100 +9,210 @@ const nameBtn = document.getElementById("nameBtn");
 const gameControls = document.getElementById("gameControls");
 
 const socket = io();
-let playerName = "";
 
-// Événements pour l'écran de nom
+let playerName = "";
+let playerId = null;
+let matchState = null;
+
+function setControlsEnabled(enabled) {
+  buttons.forEach((button) => {
+    button.disabled = !enabled;
+  });
+
+  bomb.disabled = !enabled;
+}
+
+function setPlayerInfo(message) {
+  playerInfo.textContent = message;
+}
+
+function getSelfState() {
+  if (!matchState || !playerId) {
+    return null;
+  }
+
+  return matchState.registeredPlayers?.[playerId] || null;
+}
+
+function renderControllerState() {
+  const self = getSelfState();
+  const activePlayers = matchState?.activePlayers || [];
+  const isActive = activePlayers.includes(playerId);
+  const roundLabel = matchState?.currentRound?.label || "Tournoi";
+
+  if (!playerId) {
+    setControlsEnabled(false);
+    return;
+  }
+
+  if (!matchState || !self) {
+    setPlayerInfo(`${playerName || "Joueur"} | en attente de synchronisation`);
+    setControlsEnabled(false);
+    return;
+  }
+
+  let message = `${self.name} | en attente`;
+  let enabled = false;
+
+  if (matchState.state === "completed") {
+    if (matchState.winner?.id === playerId) {
+      message = `${self.name} | vainqueur du tournoi`;
+    } else {
+      message = `${self.name} | tournoi termine`;
+    }
+  } else if (matchState.state === "transition") {
+    if (self.status === "qualified") {
+      message = `${self.name} | qualifie pour la finale`;
+    } else if (self.status === "eliminated") {
+      message = `${self.name} | elimine`;
+    } else {
+      message = `${self.name} | ${matchState.message || "prochaine manche"}`;
+    }
+  } else {
+    switch (self.status) {
+      case "waiting":
+        message = `${self.name} | inscrit dans le lobby`;
+        break;
+      case "queued":
+        message = `${self.name} | en attente du quart ${self.quarterIndex || "?"}`;
+        break;
+      case "playing":
+        message = `${self.name} | ${roundLabel} en cours`;
+        enabled = isActive && matchState.state === "playing";
+        break;
+      case "qualified":
+        if (matchState.phase === "final" && isActive) {
+          message = `${self.name} | finale en cours`;
+          enabled = matchState.state === "playing";
+        } else {
+          message = `${self.name} | qualifie pour la finale`;
+        }
+        break;
+      case "winner":
+        message = `${self.name} | vainqueur du tournoi`;
+        break;
+      case "eliminated":
+      default:
+        message = `${self.name} | elimine`;
+        break;
+    }
+  }
+
+  setPlayerInfo(message);
+  setControlsEnabled(enabled);
+}
+
 nameBtn.addEventListener("click", () => {
   playerName = playerNameInput.value.trim() || "Joueur";
-  if (playerName.length > 0) {
-    nameDialog.style.display = "none";
-    gameControls.style.display = "flex";
-    socket.emit("joinAsController", { name: playerName });
+  if (!playerName) {
+    return;
   }
+
+  nameDialog.style.display = "none";
+  gameControls.style.display = "flex";
+  setPlayerInfo(`${playerName} | connexion au tournoi...`);
+  setControlsEnabled(false);
+  socket.emit("joinAsController", { name: playerName });
 });
 
-playerNameInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
+playerNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
     nameBtn.click();
   }
 });
 
-// Focus sur l'input au chargement
 playerNameInput.focus();
+setControlsEnabled(false);
 
 socket.on("connect", () => {
-  console.log("connecté au serveur");
-  playerInfo.textContent = "Connecté au serveur...";
+  setPlayerInfo("Connecte au serveur...");
 });
 
 socket.on("joined", (data) => {
-  console.log("joueur assigné :", data);
-  playerInfo.textContent = `${playerName} | ID: ${data.playerId}`;
+  playerId = data.playerId;
   if (data.name) {
-    playerInfo.textContent = `${data.name} | ID: ${data.playerId}`;
+    playerName = data.name;
   }
+
+  setPlayerInfo(`${playerName} | inscrit`);
+  renderControllerState();
+});
+
+socket.on("matchState", (state) => {
+  matchState = state;
+  renderControllerState();
+});
+
+socket.on("matchError", (message) => {
+  setPlayerInfo(message);
+  setControlsEnabled(false);
+  nameDialog.style.display = "flex";
+  gameControls.style.display = "none";
+  playerNameInput.focus();
 });
 
 socket.on("gameFull", () => {
-  playerInfo.textContent = "Partie pleine - Impossible de rejoindre";
+  setPlayerInfo("Tournoi plein - impossible de rejoindre");
   nameDialog.style.display = "flex";
   gameControls.style.display = "none";
   playerNameInput.value = "";
   playerNameInput.focus();
+  setControlsEnabled(false);
+});
+
+socket.on("roundQualified", (data) => {
+  setPlayerInfo(`${playerName} | qualifie apres ${data.roundLabel}`);
+  setControlsEnabled(false);
 });
 
 socket.on("gameOver", (data) => {
-  console.log("Game over:", data);
-  playerInfo.textContent = `💀 GAME OVER - tué par ${data.killerName}`;
-  buttons.forEach(btn => btn.disabled = true);
-  bomb.disabled = true;
+  setPlayerInfo(`${playerName} | elimine par ${data.killerName}`);
+  setControlsEnabled(false);
 });
 
 socket.on("gameWon", (data) => {
-  console.log("Game won:", data);
-  playerInfo.textContent = `🏆 VICTOIRE - ${data.winnerName}, tu as gagné !`;
-  buttons.forEach(btn => btn.disabled = true);
-  bomb.disabled = true;
+  setPlayerInfo(`${playerName} | victoire - ${data.winnerName}`);
+  setControlsEnabled(false);
 });
 
 socket.on("disconnect", () => {
-  console.log("déconnecté");
-  playerInfo.textContent = "Déconnecté";
+  setPlayerInfo("Deconnecte");
+  setControlsEnabled(false);
 });
 
-buttons.forEach((btn) => {
-  const dir = btn.dataset.direction;
+buttons.forEach((button) => {
+  const direction = button.dataset.direction;
 
-  btn.addEventListener("touchstart", (e) => {
-    e.preventDefault();
-    socket.emit("move", { direction: dir });
+  button.addEventListener("touchstart", (event) => {
+    event.preventDefault();
+    socket.emit("move", { direction });
   });
 
-  btn.addEventListener("touchend", (e) => {
-    e.preventDefault();
-    socket.emit("stopMove", { direction: dir });
+  button.addEventListener("touchend", (event) => {
+    event.preventDefault();
+    socket.emit("stopMove");
   });
 
-  btn.addEventListener("touchcancel", (e) => {
-    e.preventDefault();
-    socket.emit("stopMove", { direction: dir });
+  button.addEventListener("touchcancel", (event) => {
+    event.preventDefault();
+    socket.emit("stopMove");
   });
 
-  btn.addEventListener("mousedown", () => {
-    socket.emit("move", { direction: dir });
+  button.addEventListener("mousedown", () => {
+    socket.emit("move", { direction });
   });
 
-  btn.addEventListener("mouseup", () => {
-    socket.emit("stopMove", { direction: dir });
+  button.addEventListener("mouseup", () => {
+    socket.emit("stopMove");
   });
 
-  btn.addEventListener("mouseleave", () => {
-    socket.emit("stopMove", { direction: dir });
+  button.addEventListener("mouseleave", () => {
+    socket.emit("stopMove");
   });
 });
 
-bomb.addEventListener("touchstart", (e) => {
-  e.preventDefault();
+bomb.addEventListener("touchstart", (event) => {
+  event.preventDefault();
   socket.emit("shoot");
 });
 
