@@ -1,4 +1,5 @@
 const path = require("path");
+const os = require("os");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -58,6 +59,28 @@ async function startServer() {
   const MAX_PLAYERS = SPAWNS.length * QUARTER_COUNT;
 
   const createFreshMap = () => MapGenerator.createMap(MAP_COLS, MAP_ROWS);
+
+  function getLocalIpAddress() {
+    const interfaces = os.networkInterfaces();
+
+    for (const networkInterface of Object.values(interfaces)) {
+      if (!Array.isArray(networkInterface)) {
+        continue;
+      }
+
+      for (const address of networkInterface) {
+        if (address.family === "IPv4" && !address.internal) {
+          return address.address;
+        }
+      }
+    }
+
+    return "localhost";
+  }
+
+  function getControllerUrl() {
+    return `http://${getLocalIpAddress()}:${PORT}/controller/`;
+  }
 
   const gameState = {
     tileSize: TILE_SIZE,
@@ -879,7 +902,6 @@ async function startServer() {
       if (wasActive) {
         delete gameState.players[socket.id];
       }
-
       unregisterPlayer(socket.id);
 
       if (wasActive) {
@@ -896,7 +918,7 @@ async function startServer() {
     server.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://localhost:${PORT}`);
       console.log(`Game screen: http://localhost:${PORT}/`);
-      console.log(`Controller: http://localhost:${PORT}/controller/`);
+      console.log(`Controller: ${getControllerUrl()}`);
 
       setInterval(updateGame, GAME_TICK_MS);
     });
