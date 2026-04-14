@@ -1,3 +1,33 @@
+const TILE_TYPE = {
+    BASIC: 0, 
+    WALL: 1,
+    DESTRUCTIBLE: 2, 
+    SPAWN: 4
+};
+
+const TILE_SIZE = 16;
+const SRC_SIZE = 16;
+const TILE_MAP = {
+    WALL: { x: 278, y: 20 },
+    DESTRUCTIBLE: { x: 392, y: 77 },
+    SPAWN: { x: 240, y: 153 },
+    FLOORS: [
+        { x: 125, y: 20 },
+        { x: 144, y: 20 },
+        { x: 163, y: 20 },
+        { x: 182, y: 20 }
+    ]
+};
+
+const CHAR_X = 706;
+const CHAR_START_Y = 17;
+const CHAR_SPACING_VERTICAL = 23;
+const CHAR_SPACING_HORIZONTAL = 20;
+
+const PROP_START_X = 824;
+const PROP_START_Y = 206;
+const PROP_SPACING = 18;
+
 export class GameScene extends Phaser.Scene {
     constructor() {
         super("GameScene");
@@ -21,19 +51,24 @@ export class GameScene extends Phaser.Scene {
         this.victoryWinnerText = null;
         this.victorySubtitleText = null;
         this.victoryRays = [];
+
+        this.propLayout = [];
     }
 
     preload() {
         if (!this.textures.exists("mountain-bg")) {
             this.load.image("mountain-bg", "assets/mountain-bg.jpg");
         }
+        this.load.image("mainAssets", "assets/mainAssets.png");
     }
 
     create() {
         this.mapGraphics = this.add.graphics();
-        this.createStatusText();
+//        this.createStatusText();
         this.setupFixedCamera();
         this.connectToServer();
+        this.canvasTexture = this.textures.createCanvas('mapCanvas', this.worldWidth, this.worldHeight);
+        this.add.image(0, 0, 'mapCanvas').setOrigin(0);
     }
 
     update() {
@@ -125,39 +160,92 @@ export class GameScene extends Phaser.Scene {
             const playerCount = playerEntries.length;
             this.setStatus(`Screen connected.\nPlayers: ${playerCount}\nOpen /controller on phone.`);
         }
-    }
+    }        
 
-    drawMap() {
-        if (!this.mapGraphics) {
-            return;
+    drawMap()
+    {
+        if (!this.canvasTexture || !this.level.length) return;
+
+        if (this.propLayout.length === 0) {
+            this.propLayout = this.level.map(row => row.map(() => {
+                return Math.random() > 0.1 ? -1 : Math.floor(Math.random() * 8);
+            }));
         }
 
-        const graphics = this.mapGraphics;
-        graphics.clear();
+        const ctx = this.canvasTexture.context;
+        const tilesetImg = this.textures.get('mainAssets').getSourceImage();
 
-        graphics.fillStyle(0x161616, 1);
-        graphics.fillRect(0, 0, this.worldWidth, this.worldHeight);
+        ctx.fillStyle = '#161616';
+        ctx.fillRect(0, 0, this.worldWidth, this.worldHeight);
 
-        for (let row = 0; row < this.mapRows; row += 1) {
-            for (let col = 0; col < this.mapCols; col += 1) {
-                const x = col * this.tileSize;
-                const y = row * this.tileSize;
+        let charIndex = 0;
 
-                if (this.level[row][col] === 1) {
-                    graphics.fillStyle(0x6666ff, 1);
-                    graphics.fillRect(x, y, this.tileSize, this.tileSize);
-                } else if (this.level[row][col] === 4) {
-                    graphics.fillStyle(0x000000, 1);
-                    graphics.fillRect(x, y, this.tileSize, this.tileSize);
-                } else if (this.level[row][col] === 2) {
-                    graphics.fillStyle(0x996633, 1);
-                    graphics.fillRect(x, y, this.tileSize, this.tileSize);
+        for (let row = 0; row < this.mapRows; row++) {
+            for (let col = 0; col < this.mapCols; col++) {
+                const dx = col * this.tileSize;
+                const dy = row * this.tileSize;
+                const tileType = this.level[row][col];
+
+                let groundSource;
+                let floorIndex;
+                
+                if (tileType === TILE_TYPE.WALL) {
+                    groundSource = TILE_MAP.WALL;
+                } else if (tileType === TILE_TYPE.DESTRUCTIBLE) {
+                    groundSource = TILE_MAP.DESTRUCTIBLE;
+                } else if (tileType === TILE_TYPE.SPAWN) {
+                    groundSource = TILE_MAP.SPAWN;
+                } else {
+                    if ( (row+col) % 2 == 0 ) {
+                        floorIndex = (row % 2 == 0) ? 0 : 1;
+                    } else {
+                        floorIndex = (row % 2 == 0) ? 2 : 3;
+                    }
+                    groundSource = TILE_MAP.FLOORS[floorIndex];
                 }
 
-                graphics.lineStyle(1, 0x333333, 1);
-                graphics.strokeRect(x, y, this.tileSize, this.tileSize);
+                ctx.drawImage(
+                    tilesetImg,
+                    groundSource.x, groundSource.y, TILE_SIZE, TILE_SIZE,
+                    dx, dy, this.tileSize, this.tileSize
+                );
+
+                /*
+                if (tileType === TILE_TYPE.BASIC) {
+                    const propIdx = this.propLayout[row] ? this.propLayout[row][col] : -1;
+                    if (propIdx !== -1) {
+                        const propCol = Math.floor(propIdx / 4);
+                        const propRow = propIdx % 4;
+                        const px = PROP_START_X + (propCol * PROP_SPACING);
+                        const py = PROP_START_Y + (propRow * PROP_SPACING);
+
+                        ctx.drawImage(
+                            tilesetImg, 
+                            px, py, SRC_SIZE, SRC_SIZE, 
+                            dx, dy, this.tileSize, this.tileSize
+                        );
+                    }
+                }
+
+                /*
+                // --- LAYER 3: CHARACTERS (OVERLAY) ---
+                // Only draw characters if it's a SPAWN tile
+                if (tileType === TILE_TYPE.SPAWN) {
+                    const cx = CHAR_X;
+                    const cy = CHAR_START_Y + (charIndex * CHAR_SPACING_VERTICAL);
+                    charIndex += 1;
+
+                    ctx.drawImage(
+                        tilesetImg, 
+                        cx, cy, SRC_SIZE, SRC_SIZE, 
+                        dx, dy, this.tileSize, this.tileSize
+                    );
+                }
+                */
             }
         }
+
+        this.canvasTexture.refresh();
     }
 
     setupFixedCamera() {
