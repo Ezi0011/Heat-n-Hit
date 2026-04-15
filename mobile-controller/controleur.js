@@ -30,6 +30,63 @@ function formatPlayerMessage(name, status) {
   return `${name || "Joueur"} | ${status}`;
 }
 
+function clampChannel(value) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function hexToRgb(color) {
+  if (typeof color !== "string") {
+    return null;
+  }
+
+  const normalized = color.replace("#", "");
+  if (normalized.length !== 6) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(normalized, 16);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  return {
+    r: (parsed >> 16) & 255,
+    g: (parsed >> 8) & 255,
+    b: parsed & 255
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  return `#${[r, g, b].map((channel) => clampChannel(channel).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mixColors(baseColor, targetColor, ratio) {
+  const base = hexToRgb(baseColor);
+  const target = hexToRgb(targetColor);
+
+  if (!base || !target) {
+    return baseColor;
+  }
+
+  return rgbToHex({
+    r: base.r + ((target.r - base.r) * ratio),
+    g: base.g + ((target.g - base.g) * ratio),
+    b: base.b + ((target.b - base.b) * ratio)
+  });
+}
+
+function applyPlayerTheme(color) {
+  if (!hexToRgb(color)) {
+    return;
+  }
+
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--player-accent", color);
+  rootStyle.setProperty("--player-accent-strong", mixColors(color, "#ffffff", 0.14));
+  rootStyle.setProperty("--player-accent-soft", `${color}33`);
+  rootStyle.setProperty("--player-panel", `${mixColors(color, "#ffffff", 0.18)}22`);
+}
+
 function getSelfState() {
   if (!matchState || !playerId) {
     return null;
@@ -53,6 +110,10 @@ function renderControllerState() {
     setPlayerInfo(formatPlayerMessage(playerName, "🔄 En attente de synchronisation..."));
     setControlsEnabled(false);
     return;
+  }
+
+  if (self.color) {
+    applyPlayerTheme(self.color);
   }
 
   let message = formatPlayerMessage(self.name, "⏳ En attente...");
@@ -139,6 +200,9 @@ socket.on("joined", (data) => {
   playerId = data.playerId;
   if (data.name) {
     playerName = data.name;
+  }
+  if (data.color) {
+    applyPlayerTheme(data.color);
   }
 
   setPlayerInfo(formatPlayerMessage(playerName, "🧑‍💻 Inscrit dans le lobby"));

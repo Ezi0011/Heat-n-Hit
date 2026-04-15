@@ -1,3 +1,5 @@
+import { createQrCodeDataUrl } from "../lib/localQrCode.js";
+
 export class BootScene extends Phaser.Scene {
     constructor() {
         super("BootScene");
@@ -537,7 +539,7 @@ export class BootScene extends Phaser.Scene {
         this.removeQrCodeBlock();
 
         const controllerUrl = this.getControllerUrl();
-        const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=0&data=${encodeURIComponent(controllerUrl)}`;
+        const qrImageUrl = createQrCodeDataUrl(controllerUrl, 220);
         const qrSize = 96;
 
         const qrBackground = document.createElement("div");
