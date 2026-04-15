@@ -18,6 +18,9 @@ export class BootScene extends Phaser.Scene {
         this.playerListAutoScrollTimer = null;
         this.playerListAutoScrollDirection = 1;
         this.playerListAutoScrollPauseUntil = 0;
+        this.qrCodeElement = null;
+        this.qrCodeLabelElement = null;
+        this.qrCodeOverlayElement = null;
 
         this.handleSocketConnect = () => {
             console.log("Screen connected");
@@ -32,6 +35,8 @@ export class BootScene extends Phaser.Scene {
 
             if (state.phase !== "lobby") {
                 if (this.currentScreen !== "playing") {
+                    this.removeQrCodeBlock();
+                    this.clearScreen();
                     this.currentScreen = "playing";
                     this.scene.start("GameScene", {
                         socket: this.socket,
@@ -546,6 +551,7 @@ export class BootScene extends Phaser.Scene {
         qrBackground.style.justifyContent = "center";
         qrBackground.style.zIndex = "9998";
         qrBackground.style.boxShadow = "0 10px 24px rgba(0, 0, 0, 0.28)";
+        qrBackground.style.cursor = "zoom-in";
 
         const qrImage = document.createElement("img");
         qrImage.src = qrImageUrl;
@@ -577,6 +583,7 @@ export class BootScene extends Phaser.Scene {
 
         document.body.appendChild(qrBackground);
         document.body.appendChild(label);
+        qrBackground.addEventListener("click", () => this.toggleQrCodeOverlay(qrImageUrl));
 
         this.qrCodeElement = qrBackground;
         this.qrCodeLabelElement = label;
@@ -619,6 +626,58 @@ export class BootScene extends Phaser.Scene {
             this.qrCodeLabelElement.remove();
             this.qrCodeLabelElement = null;
         }
+
+        this.removeQrCodeOverlay();
+    }
+
+    toggleQrCodeOverlay(qrImageUrl) {
+        if (this.qrCodeOverlayElement) {
+            this.removeQrCodeOverlay();
+            return;
+        }
+
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.zIndex = "10001";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.background = "rgba(3, 8, 13, 0.78)";
+        overlay.style.backdropFilter = "blur(6px)";
+        overlay.style.cursor = "pointer";
+
+        const panel = document.createElement("div");
+        panel.style.padding = "20px";
+        panel.style.borderRadius = "24px";
+        panel.style.background = "rgba(255, 255, 255, 0.96)";
+        panel.style.boxShadow = "0 24px 60px rgba(0, 0, 0, 0.4)";
+        panel.style.cursor = "default";
+        panel.addEventListener("click", (event) => {
+            event.stopPropagation();
+        });
+
+        const image = document.createElement("img");
+        image.src = qrImageUrl;
+        image.alt = "QR code agrandi";
+        image.style.width = "min(56vw, 420px)";
+        image.style.height = "auto";
+        image.style.display = "block";
+        panel.appendChild(image);
+
+        overlay.appendChild(panel);
+        overlay.addEventListener("click", () => this.removeQrCodeOverlay());
+        document.body.appendChild(overlay);
+        this.qrCodeOverlayElement = overlay;
+    }
+
+    removeQrCodeOverlay() {
+        if (!this.qrCodeOverlayElement) {
+            return;
+        }
+
+        this.qrCodeOverlayElement.remove();
+        this.qrCodeOverlayElement = null;
     }
 
     handleSceneResize() {
