@@ -1,3 +1,28 @@
+const TILE_TYPE = {
+    BASIC: 0, 
+    WALL: 1,
+    DESTRUCTIBLE: 2, 
+    SPAWN: 4
+};
+
+const TILE_SIZE = 16;
+const TILE_MAP = {
+    WALL: { x: 278, y: 20 },
+    DESTRUCTIBLE: { x: 392, y: 77 },
+    SPAWN: { x: 240, y: 153 },
+    FLOORS: [
+        { x: 125, y: 20 },
+        { x: 144, y: 20 },
+        { x: 163, y: 20 },
+        { x: 182, y: 20 }
+    ]
+};
+
+const CHAR_START_X = 706;
+const CHAR_START_Y = 17;
+const CHAR_SPACING_VERTICAL = 24;
+const CHAR_SPACING_HORIZONTAL = 20;
+
 export class GameScene extends Phaser.Scene {
     constructor() {
         super("GameScene");
@@ -64,15 +89,40 @@ export class GameScene extends Phaser.Scene {
         if (data?.matchState) {
             this.pendingMatchState = data.matchState;
         }
+
+        this.propLayout = [];
     }
 
     preload() {
         if (!this.textures.exists("mountain-bg")) {
             this.load.image("mountain-bg", "assets/mountain-bg.jpg");
         }
+        this.load.image("mainAssets", "assets/mainAssets.png");
+    
+        this.load.on('complete', () => {
+            const tex = this.textures.get('mainAssets');
+            const directions = ['right', 'left', 'up', 'down'];
+            
+            for (let i = 0; i < 16; i++) {
+                const y = CHAR_START_Y + (i * CHAR_SPACING_VERTICAL);
+                
+                directions.forEach((dir, dirIndex) => {
+                    const x = CHAR_START_X + (dirIndex * CHAR_SPACING_HORIZONTAL);
+            
+                    if (!tex.has(`player_${i}_${dir}`)) {
+                        tex.add(`player_${i}_${dir}`, 0, x, y, 16, 16);
+                    }
+                });
+            }
+        });
     }
 
     create() {
+        this.canvasTexture = this.textures.createCanvas('mapCanvas', this.worldWidth, this.worldHeight);
+
+        this.mapImage = this.add.image(0, 0, 'mapCanvas').setOrigin(0);
+        this.mapImage.setDepth(0);
+
         this.mapGraphics = this.add.graphics();
         //this.createStatusText();
         this.createRoundText();
@@ -279,37 +329,55 @@ export class GameScene extends Phaser.Scene {
         return false;
     }
 
-    drawMap() {
-        if (!this.mapGraphics) {
-            return;
+    drawMap()
+    {
+        if (!this.canvasTexture || !this.level.length) return;
+
+        if (this.propLayout.length === 0) {
+            this.propLayout = this.level.map(row => row.map(() => {
+                return Math.random() > 0.1 ? -1 : Math.floor(Math.random() * 8);
+            }));
         }
 
-        const graphics = this.mapGraphics;
-        graphics.clear();
+        const ctx = this.canvasTexture.context;
+        const tilesetImg = this.textures.get('mainAssets').getSourceImage();
 
-        graphics.fillStyle(0x161616, 1);
-        graphics.fillRect(0, 0, this.worldWidth, this.worldHeight);
+        ctx.fillStyle = '#161616';
+        ctx.fillRect(0, 0, this.worldWidth, this.worldHeight);
 
-        for (let row = 0; row < this.mapRows; row += 1) {
-            for (let col = 0; col < this.mapCols; col += 1) {
-                const x = col * this.tileSize;
-                const y = row * this.tileSize;
+        for (let row = 0; row < this.mapRows; row++) {
+            for (let col = 0; col < this.mapCols; col++) {
+                const dx = col * this.tileSize;
+                const dy = row * this.tileSize;
+                const tileType = this.level[row][col];
 
-                if (this.level[row][col] === 1) {
-                    graphics.fillStyle(0x6666ff, 1);
-                    graphics.fillRect(x, y, this.tileSize, this.tileSize);
-                } else if (this.level[row][col] === 4) {
-                    graphics.fillStyle(0x000000, 1);
-                    graphics.fillRect(x, y, this.tileSize, this.tileSize);
-                } else if (this.level[row][col] === 2) {
-                    graphics.fillStyle(0x996633, 1);
-                    graphics.fillRect(x, y, this.tileSize, this.tileSize);
+                let groundSource;
+                let floorIndex;
+                
+                if (tileType === TILE_TYPE.WALL) {
+                    groundSource = TILE_MAP.WALL;
+                } else if (tileType === TILE_TYPE.DESTRUCTIBLE) {
+                    groundSource = TILE_MAP.DESTRUCTIBLE;
+                } else if (tileType === TILE_TYPE.SPAWN) {
+                    groundSource = TILE_MAP.SPAWN;
+                } else {
+                    if ( (row+col) % 2 == 0 ) {
+                        floorIndex = (row % 2 == 0) ? 0 : 1;
+                    } else {
+                        floorIndex = (row % 2 == 0) ? 2 : 3;
+                    }
+                    groundSource = TILE_MAP.FLOORS[floorIndex];
                 }
 
-                graphics.lineStyle(1, 0x333333, 1);
-                graphics.strokeRect(x, y, this.tileSize, this.tileSize);
+                ctx.drawImage(
+                    tilesetImg,
+                    groundSource.x, groundSource.y, TILE_SIZE, TILE_SIZE,
+                    dx, dy, this.tileSize, this.tileSize
+                );
             }
         }
+
+        this.canvasTexture.refresh();
     }
 
     setupFixedCamera() {
@@ -333,13 +401,21 @@ export class GameScene extends Phaser.Scene {
             const serverPlayer = serverPlayers[id];
             const targetX = this.gridToWorldX(serverPlayer.gridX);
             const targetY = this.gridToWorldY(serverPlayer.gridY);
-            const fillColor = this.parseColor(serverPlayer.color);
+            const dir = serverPlayer.direction || "down"; // Default to down if undefined
+
+            const colorIndex = serverPlayer.colorIndex || 0;
+            const frameName = `player_${colorIndex}_${dir}`;
 
             if (!this.players.has(id)) {
-                const player = this.add.rectangle(targetX, targetY, 36, 36, fillColor);
-                player.gridX = serverPlayer.gridX;
-                player.gridY = serverPlayer.gridY;
-                player.setDepth(20);
+
+                const player = this.add.sprite(targetX, targetY, "mainAssets", frameName);
+
+                player.setCrop(2, 2, 6, 12);
+                player.setOrigin(0.33, 0.5);
+                player.setDisplaySize(64, 64);
+                player.setDepth(100);
+
+                player.assignedColorIndex = colorIndex;
 
                 const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
                     fontSize: "14px",
@@ -348,16 +424,20 @@ export class GameScene extends Phaser.Scene {
                     padding: { x: 4, y: 2 }
                 });
                 nameText.setOrigin(0.5, 1);
-                nameText.setDepth(30);
+                nameText.setDepth(150);
 
                 this.players.set(id, player);
                 this.playerNames.set(id, nameText);
                 return;
+            } else {
+                const player = this.players.get(id);
+                const modelRow = player.assignedColorIndex;
+                player.setFrame(`player_${modelRow}_${dir}`);
             }
 
             const player = this.players.get(id);
             const nameText = this.playerNames.get(id);
-            player.setFillStyle(fillColor);
+            player.setFrame(`player_${colorIndex}_${dir}`);
 
             if (player.gridX === serverPlayer.gridX && player.gridY === serverPlayer.gridY) {
                 return;
@@ -365,6 +445,25 @@ export class GameScene extends Phaser.Scene {
 
             player.gridX = serverPlayer.gridX;
             player.gridY = serverPlayer.gridY;
+
+            if (dir === "right")
+            {
+                player.setCrop(2, 2, 6, 12);
+                player.setOrigin(0.33, 0.5);
+            } else if (dir === "left")
+            {
+                player.setCrop(8, 1, 6, 12);
+                player.setOrigin(0.66, 0.5);
+            } else if (dir === "up")
+            {
+                player.setCrop(2, 8, 12, 6);
+                player.setOrigin(0.5, 0.66);
+            } else if (dir === "down")
+            {
+                player.setCrop(2, 2, 12, 6);
+                player.setOrigin(0.5, 0.33);
+            }
+
 
             this.tweens.killTweensOf(player);
             this.tweens.add({

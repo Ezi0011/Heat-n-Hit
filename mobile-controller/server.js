@@ -25,22 +25,22 @@ const PROJECTILE_MAX_TICKS = 50;
 const ROUND_TRANSITION_MS = 2800;
 
 const COLORS = [
-  "#ff595e",
-  "#1982c4",
-  "#8ac926",
-  "#ffca3a",
-  "#6a4c93",
-  "#ff924c",
-  "#ff85a1",
-  "#00bbf9",
-  "#00f5d4",
-  "#f15bb5",
-  "#9b5de5",
-  "#fb8500",
-  "#90be6d",
-  "#577590",
-  "#f94144",
-  "#43aa8b"
+  "#000000",
+  "#575757",
+  "#ad2323",
+  "#2a4bd7",
+  "#1c6914",
+  "#814a19",
+  "#631e93",
+  "#a0a0a0",
+  "#81c57a",
+  "#9dafff",
+  "#29d0d0",
+  "#ff9233",
+  "#ffee33",
+  "#e9debb",
+  "#ffcdf3",
+  "#ffffff"
 ];
 
 app.use(express.static(ROOT_DIR));
@@ -853,7 +853,41 @@ async function startServer() {
         return;
       }
 
-      restartTournament();
+      matchState.state = "playing";
+      gameState.players = {};
+      matchState.activePlayers = {};
+
+      let spawnIndex = 0;
+      for (const socketId of connectedIds) {
+        if (spawnIndex >= SPAWNS.length) {
+          break;
+        }
+
+        const connectedPlayer = matchState.connectedPlayers[socketId];
+        const spawn = SPAWNS[spawnIndex];
+        const playerData = {
+          id: socketId,
+          name: connectedPlayer.name,
+          color: COLORS[spawnIndex % COLORS.length],
+          gridX: spawn.gridX,
+          gridY: spawn.gridY,
+          moveDuration: MOVE_DURATION,
+          direction: "right",
+          movingDirection: null,
+          moveTimer: 0,
+          shootCooldown: 0,
+          alive: true
+        };
+
+        gameState.players[socketId] = playerData;
+        matchState.activePlayers[socketId] = true;
+        spawnIndex += 1;
+      }
+
+      matchState.connectedPlayers = {};
+      emitMatchState();
+      emitGameState();
+      checkForWinner();
     });
 
     socket.on("move", ({ direction } = {}) => {
