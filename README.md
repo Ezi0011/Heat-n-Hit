@@ -14,10 +14,11 @@ Le projet est compose de 3 parties :
 
 Avant de lancer le projet, il faut avoir :
 
-- Node.js installe
+- Node.js installe (https://learn.microsoft.com/fr-fr/windows/dev-environment/javascript/nodejs-on-windows)
 - npm installe
 - un ordinateur pour afficher le jeu
 - un ou plusieurs telephones connectes au meme reseau local que l'ordinateur
+
 
 ## Installation
 
@@ -47,7 +48,7 @@ Exemple :
 
 ## Comment rejoindre une partie
 
-1. Lance le serveur avec `npm start`
+1. Lance le serveur avec `npm start` dans le dossier "mobile-controller"
 2. Ouvre l'ecran principal sur l'ordinateur
 3. Depuis l'ecran d'attente, scanne le QR code avec un telephone
 4. Entre un nom sur la manette
