@@ -461,12 +461,16 @@ export class GameScene extends Phaser.Scene {
 
                 const player = this.add.sprite(targetX, targetY, "mainAssets", frameName);
 
-                player.setCrop(2, 2, 6, 12);
-                player.setOrigin(0.33, 0.5);
-                player.setDisplaySize(64, 64);
+                player.setDisplaySize(56, 56);
+                player.setOrigin(0.5, 0.56);
                 player.setDepth(100);
-
                 player.assignedColorIndex = colorIndex;
+                player.baseScaleX = player.scaleX;
+                player.baseScaleY = player.scaleY;
+                player.gridX = serverPlayer.gridX;
+                player.gridY = serverPlayer.gridY;
+                this.applyPlayerDirectionPose(player, dir);
+                this.resetPlayerWalkPose(player);
 
                 const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
                     fontSize: "14px",
@@ -482,39 +486,23 @@ export class GameScene extends Phaser.Scene {
                 return;
             } else {
                 const player = this.players.get(id);
-                const modelRow = player.assignedColorIndex;
+                const modelRow = player.assignedColorIndex ?? colorIndex;
                 player.setFrame(`player_${modelRow}_${dir}`);
             }
 
             const player = this.players.get(id);
             const nameText = this.playerNames.get(id);
+            player.assignedColorIndex = colorIndex;
             player.setFrame(`player_${colorIndex}_${dir}`);
+            this.applyPlayerDirectionPose(player, dir);
 
             if (player.gridX === serverPlayer.gridX && player.gridY === serverPlayer.gridY) {
+                this.resetPlayerWalkPose(player);
                 return;
             }
 
             player.gridX = serverPlayer.gridX;
             player.gridY = serverPlayer.gridY;
-
-            if (dir === "right")
-            {
-                player.setCrop(2, 2, 6, 12);
-                player.setOrigin(0.33, 0.5);
-            } else if (dir === "left")
-            {
-                player.setCrop(8, 1, 6, 12);
-                player.setOrigin(0.66, 0.5);
-            } else if (dir === "up")
-            {
-                player.setCrop(2, 8, 12, 6);
-                player.setOrigin(0.5, 0.66);
-            } else if (dir === "down")
-            {
-                player.setCrop(2, 2, 12, 6);
-                player.setOrigin(0.5, 0.33);
-            }
-
 
             this.tweens.killTweensOf(player);
             this.tweens.add({
@@ -524,6 +512,7 @@ export class GameScene extends Phaser.Scene {
                 duration: serverPlayer.moveDuration ?? 120,
                 ease: "Linear"
             });
+            this.playPlayerWalkAnimation(player, dir, serverPlayer.moveDuration ?? 120);
 
             this.tweens.killTweensOf(nameText);
             this.tweens.add({
@@ -550,6 +539,45 @@ export class GameScene extends Phaser.Scene {
                 nameText.destroy();
                 this.playerNames.delete(id);
             }
+        });
+    }
+
+    applyPlayerDirectionPose(player, dir) {
+        player.setCrop();
+        player.setOrigin(0.5, dir === "up" ? 0.58 : 0.56);
+        player.currentDirection = dir;
+    }
+
+    resetPlayerWalkPose(player) {
+        if (!player) {
+            return;
+        }
+
+        player.setScale(player.baseScaleX ?? 4, player.baseScaleY ?? 4);
+        player.setAngle(0);
+    }
+
+    playPlayerWalkAnimation(player, dir, moveDuration) {
+        const baseScaleX = player.baseScaleX ?? player.scaleX;
+        const baseScaleY = player.baseScaleY ?? player.scaleY;
+        const isHorizontal = dir === "left" || dir === "right";
+        const targetScaleX = isHorizontal ? baseScaleX * 0.8 : baseScaleX * 1.1;
+        const targetScaleY = isHorizontal ? baseScaleY * 1.15 : baseScaleY * 0.82;
+        const targetAngle = dir === "left" ? -10 : dir === "right" ? 10 : 0;
+        const stepDuration = Math.max(35, Math.floor(moveDuration / 4));
+
+        this.resetPlayerWalkPose(player);
+
+        this.tweens.add({
+            targets: player,
+            scaleX: targetScaleX,
+            scaleY: targetScaleY,
+            angle: targetAngle,
+            duration: stepDuration,
+            yoyo: true,
+            repeat: 1,
+            ease: "Quad.InOut",
+            onComplete: () => this.resetPlayerWalkPose(player)
         });
     }
 
