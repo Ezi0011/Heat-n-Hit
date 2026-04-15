@@ -57,21 +57,21 @@ export class GameScene extends Phaser.Scene {
         this.load.image("mainAssets", "assets/mainAssets.png");
     
         this.load.on('complete', () => {
-        const tex = this.textures.get('mainAssets');
-        const directions = ['left', 'right', 'up', 'down'];
-        
-        for (let i = 0; i < 6; i++) {
-            const y = CHAR_START_Y + (i * CHAR_SPACING_VERTICAL);
+            const tex = this.textures.get('mainAssets');
+            const directions = ['right', 'left', 'up', 'down'];
             
-            directions.forEach((dir, dirIndex) => {
-                const x = CHAR_START_X + (dirIndex * CHAR_SPACING_HORIZONTAL);
-                // Naming scheme: player_0_left, player_1_up, etc.
-                if (!tex.has(`player_${i}_${dir}`)) {
-                    tex.add(`player_${i}_${dir}`, 0, x, y, 16, 16);
-                }
-            });
-        }
-    });
+            for (let i = 0; i < 16; i++) {
+                const y = CHAR_START_Y + (i * CHAR_SPACING_VERTICAL);
+                
+                directions.forEach((dir, dirIndex) => {
+                    const x = CHAR_START_X + (dirIndex * CHAR_SPACING_HORIZONTAL);
+            
+                    if (!tex.has(`player_${i}_${dir}`)) {
+                        tex.add(`player_${i}_${dir}`, 0, x, y, 16, 16);
+                    }
+                });
+            }
+        });
     }
 
     create() {
@@ -249,15 +249,17 @@ export class GameScene extends Phaser.Scene {
             const targetX = this.gridToWorldX(serverPlayer.gridX);
             const targetY = this.gridToWorldY(serverPlayer.gridY);
             const dir = serverPlayer.direction || "down"; // Default to down if undefined
-            let colorIndex;
+
+            const colorIndex = serverPlayer.colorIndex || 0;
+            const frameName = `player_${colorIndex}_${dir}`;
 
             if (!this.players.has(id)) {
 
-                colorIndex = serverPlayer.colorIndex || 0;
-                const player = this.add.sprite(targetX, targetY, "mainAssets", `player_${colorIndex}_${dir}`);
+                const player = this.add.sprite(targetX, targetY, "mainAssets", frameName);
+
                 player.setCrop(2, 2, 6, 12);
-                player.setDisplaySize(64, 64);
                 player.setOrigin(0.33, 0.5);
+                player.setDisplaySize(64, 64);
                 player.setDepth(100);
 
                 const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
@@ -272,6 +274,9 @@ export class GameScene extends Phaser.Scene {
                 this.players.set(id, player);
                 this.playerNames.set(id, nameText);
                 return;
+            } else {
+                const player = this.players.get(id);
+                player.setFrame(frameName);
             }
 
             const player = this.players.get(id);
@@ -284,6 +289,25 @@ export class GameScene extends Phaser.Scene {
 
             player.gridX = serverPlayer.gridX;
             player.gridY = serverPlayer.gridY;
+
+            if (dir === "right")
+            {
+                player.setCrop(2, 2, 6, 12);
+                player.setOrigin(0.33, 0.5);
+            } else if (dir === "left")
+            {
+                player.setCrop(8, 1, 6, 12);
+                player.setOrigin(0.66, 0.5);
+            } else if (dir === "up")
+            {
+                player.setCrop(2, 8, 12, 6);
+                player.setOrigin(0.5, 0.66);
+            } else if (dir === "down")
+            {
+                player.setCrop(2, 2, 12, 6);
+                player.setOrigin(0.5, 0.33);
+            }
+
 
             this.tweens.killTweensOf(player);
             this.tweens.add({
