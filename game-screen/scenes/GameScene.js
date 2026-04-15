@@ -22,6 +22,7 @@ const CHAR_START_X = 706;
 const CHAR_START_Y = 17;
 const CHAR_SPACING_VERTICAL = 24;
 const CHAR_SPACING_HORIZONTAL = 20;
+const MAP_CANVAS_TEXTURE_KEY = "mapCanvas";
 
 export class GameScene extends Phaser.Scene {
     constructor() {
@@ -98,15 +99,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     init(data) {
+        this.resetRuntimeState();
+
         if (data?.socket) {
             this.socket = data.socket;
         }
 
-        if (data?.matchState) {
-            this.pendingMatchState = data.matchState;
-        }
-
-        this.propLayout = [];
+        this.pendingMatchState = data?.matchState || null;
     }
 
     preload() {
@@ -128,7 +127,9 @@ export class GameScene extends Phaser.Scene {
         if (!this.cache.audio.exists("final-theme")) {
             this.load.audio("final-theme", "assets/final-theme.mp3");
         }
-        this.load.image("mainAssets", "assets/mainAssets.png");
+        if (!this.textures.exists("mainAssets")) {
+            this.load.image("mainAssets", "assets/mainAssets.png");
+        }
     
         this.load.on('complete', () => {
             const tex = this.textures.get('mainAssets');
@@ -149,9 +150,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     create() {
-        this.canvasTexture = this.textures.createCanvas('mapCanvas', this.worldWidth, this.worldHeight);
+        this.createMapCanvasTexture();
 
-        this.mapImage = this.add.image(0, 0, 'mapCanvas').setOrigin(0);
+        this.mapImage = this.add.image(0, 0, MAP_CANVAS_TEXTURE_KEY).setOrigin(0);
         this.mapImage.setDepth(0);
 
         this.mapGraphics = this.add.graphics();
@@ -167,11 +168,70 @@ export class GameScene extends Phaser.Scene {
         this.events.once("destroy", () => this.stopGameTheme());
         this.events.once("destroy", () => this.stopFinalTheme());
         this.input.on("pointerdown", this.resumeAudioContext, this);
+        this.events.once("shutdown", () => this.handleSceneShutdown());
 
         if (this.pendingMatchState) {
             this.applyMatchState(this.pendingMatchState);
             this.pendingMatchState = null;
         }
+    }
+
+    resetRuntimeState() {
+        this.level = [];
+        this.players = new Map();
+        this.projectiles = new Map();
+        this.playerNames = new Map();
+        this.propLayout = [];
+        this.canvasTexture = null;
+        this.mapImage = null;
+        this.mapGraphics = null;
+        this.statusText = null;
+        this.roundText = null;
+        this.roundSubtitleText = null;
+        this.roundTextValue = "";
+        this.roundTextHideEvent = null;
+        this.roundBanner = null;
+        this.roundBannerShadow = null;
+        this.roundBannerGlow = null;
+        this.roundBannerPanel = null;
+        this.roundBannerInner = null;
+        this.roundBannerLeftAccent = null;
+        this.roundBannerRightAccent = null;
+        this.matchState = null;
+        this.hasWinner = false;
+        this.victoryOverlay = null;
+        this.victoryWinnerText = null;
+        this.victorySubtitleText = null;
+        this.victoryRays = [];
+        this.restartButton = null;
+        this.restartButtonText = null;
+        this.isRestartingTournament = false;
+    }
+
+    createMapCanvasTexture() {
+        if (this.textures.exists(MAP_CANVAS_TEXTURE_KEY)) {
+            this.textures.remove(MAP_CANVAS_TEXTURE_KEY);
+        }
+
+        this.canvasTexture = this.textures.createCanvas(MAP_CANVAS_TEXTURE_KEY, this.worldWidth, this.worldHeight);
+    }
+
+    handleSceneShutdown() {
+        this.detachSocketListeners();
+
+        if (this.roundTextHideEvent) {
+            this.roundTextHideEvent.remove(false);
+            this.roundTextHideEvent = null;
+        }
+
+        if (this.textures.exists(MAP_CANVAS_TEXTURE_KEY)) {
+            this.textures.remove(MAP_CANVAS_TEXTURE_KEY);
+        }
+
+        this.players.clear();
+        this.projectiles.clear();
+        this.playerNames.clear();
+        this.victoryRays = [];
     }
 
     update() {
