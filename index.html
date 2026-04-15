@@ -8,10 +8,25 @@
     <script src="./phaser.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
+        html,
         body {
             margin: 0;
+            width: 100%;
+            height: 100%;
             background: #111;
             overflow: hidden;
+        }
+
+        #tutorial-frame {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            border: 0;
+            background: #1a1a1a;
+        }
+
+        body.game-started #tutorial-frame {
+            display: none;
         }
 
         canvas {
@@ -21,6 +36,41 @@
     </style>
 </head>
 <body>
-    <script type="module" src="./game-screen/main.js"></script>
+    <iframe id="tutorial-frame" src="./tuto/tutorial.html" title="Tutoriel Heat-n-Hit"></iframe>
+
+    <script type="module">
+        let gameStarted = false;
+
+        async function startGame() {
+            if (gameStarted) {
+                return;
+            }
+
+            gameStarted = true;
+            document.body.classList.add("game-started");
+
+            const tutorialFrame = document.getElementById("tutorial-frame");
+            if (tutorialFrame) {
+                tutorialFrame.remove();
+            }
+
+            await import("./game-screen/main.js");
+        }
+
+        window.addEventListener("message", (event) => {
+            const tutorialFrame = document.getElementById("tutorial-frame");
+            if (!tutorialFrame || event.source !== tutorialFrame.contentWindow) {
+                return;
+            }
+
+            if (event.data && event.data.type === "heat-n-hit:start-game") {
+                startGame();
+            }
+        });
+
+        if (new URLSearchParams(window.location.search).get("startGame") === "1") {
+            startGame();
+        }
+    </script>
 </body>
 </html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heat-n-Hit | Tutoriel Joueur</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>HEAT-N-HIT</h1>
+        <p>L'arene de combat tactique en temps reel</p>
+    </header>
+
+    <main>
+        <section class="card">
+            <h2>Bienvenue dans l'arene</h2>
+            <p>Heat-n-Hit est un jeu de combat multijoueur frenetique inspire des classiques comme <em>Bomberman</em>, avec une dimension tactique plus forte.</p>
+            <p>Votre objectif est simple : rester le dernier en vie en eliminant vos adversaires avec vos boules de feu.</p>
+        </section>
+
+        <section class="card">
+            <h2>Comment rejoindre la partie</h2>
+            <p>Votre smartphone devient votre manette de jeu.</p>
+            <ol>
+                <li><strong>Scannez pour jouer :</strong> approchez-vous de l'ecran principal et scannez le QR Code avec votre telephone.</li>
+                <li><strong>Controle mobile :</strong> une fois connecte, votre telephone affiche les boutons de commande.</li>
+                <li><strong>Entrez dans la bataille :</strong> attendez le lancement du tournoi et le compte a rebours.</li>
+            </ol>
+        </section>
+
+        <section class="card">
+            <h2>Maitriser le gameplay</h2>
+            <p>Pour gagner, vous devez anticiper les mouvements adverses et gerer l'espace autour de vous.</p>
+            <div class="controls-grid">
+                <div class="control-item">
+                    <strong>Deplacements</strong>
+                    <p>Utilisez la croix directionnelle de votre mobile pour vous deplacer case par case sur la map.</p>
+                </div>
+                <div class="control-item">
+                    <strong>Boules de feu</strong>
+                    <p>Appuyez sur le bouton de tir pour lancer un projectile dans votre direction actuelle.</p>
+                </div>
+            </div>
+            <p class="environment-note"><strong>Environnement :</strong> utilisez les murs solides pour vous proteger et detruisez les blocs cassables pour ouvrir le terrain.</p>
+        </section>
+
+        <section class="card">
+            <h2>Deroulement du tournoi</h2>
+            <p>Une partie de Heat-n-Hit est divisee en plusieurs manches :</p>
+            <ul>
+                <li>Les joueurs sont repartis en 4 groupes equilibres.</li>
+                <li>Les 25% meilleurs survivants de chaque groupe sont qualifies pour la finale.</li>
+                <li>Le dernier survivant de la finale remporte le tournoi.</li>
+            </ul>
+        </section>
+    </main>
+
+    <footer>
+        <button id="start-game-button" class="start-game-button" type="button">Acceder au lobby</button>
+        <p>Projet Heat-n-Hit &copy; 2025 - FZ/NL/PK</p>
+    </footer>
+
+    <script>
+        const startButton = document.getElementById("start-game-button");
+
+        startButton.addEventListener("click", () => {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: "heat-n-hit:start-game" }, "*");
+                return;
+            }
+
+            window.location.href = "../?startGame=1";
+        });
+    </script>
+</body>
+</html>
