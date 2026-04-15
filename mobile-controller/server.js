@@ -125,6 +125,7 @@ async function startServer() {
           id: player.id,
           name: player.name,
           color: player.color,
+          colorIndex: player.colorIndex,
           status: player.status,
           quarterIndex: player.quarterIndex,
           finalQualified: player.finalQualified
@@ -142,7 +143,8 @@ async function startServer() {
       .map((player) => ({
         id: player.id,
         name: player.name,
-        color: player.color
+        color: player.color,
+        colorIndex: player.colorIndex
       }));
 
     return {
@@ -160,7 +162,8 @@ async function startServer() {
           .map((player) => ({
             id: player.id,
             name: player.name,
-            color: player.color
+            color: player.color,
+            colorIndex: player.colorIndex
           }))
       ),
       currentRound: matchState.currentRound
@@ -177,7 +180,8 @@ async function startServer() {
         ? {
             id: matchState.winnerId,
             name: matchState.registeredPlayers[matchState.winnerId].name,
-            color: matchState.registeredPlayers[matchState.winnerId].color
+            color: matchState.registeredPlayers[matchState.winnerId].color,
+            colorIndex: matchState.registeredPlayers[matchState.winnerId].colorIndex
           }
         : null
     };
@@ -293,6 +297,7 @@ async function startServer() {
       id: socketId,
       name: name || "Joueur",
       color: COLORS[playerCount % COLORS.length],
+      colorIndex: playerCount % COLORS.length,
       order: playerCount,
       status: "waiting",
       quarterIndex: null,
@@ -311,6 +316,7 @@ async function startServer() {
       id: playerId,
       name: registeredPlayer.name,
       color: registeredPlayer.color,
+      colorIndex: registeredPlayer.colorIndex,
       gridX: spawn.gridX,
       gridY: spawn.gridY,
       moveDuration: MOVE_DURATION,
@@ -814,7 +820,8 @@ async function startServer() {
         socket.emit("joined", {
           playerId: existingPlayer.id,
           name: existingPlayer.name,
-          color: existingPlayer.color
+          color: existingPlayer.color,
+          colorIndex: existingPlayer.colorIndex
         });
         return;
       }
@@ -833,7 +840,8 @@ async function startServer() {
       socket.emit("joined", {
         playerId: player.id,
         name: player.name,
-        color: player.color
+        color: player.color,
+        colorIndex: player.colorIndex
       });
 
       console.log("Player joined lobby:", socket.id, "Name:", player.name);
@@ -853,41 +861,7 @@ async function startServer() {
         return;
       }
 
-      matchState.state = "playing";
-      gameState.players = {};
-      matchState.activePlayers = {};
-
-      let spawnIndex = 0;
-      for (const socketId of connectedIds) {
-        if (spawnIndex >= SPAWNS.length) {
-          break;
-        }
-
-        const connectedPlayer = matchState.connectedPlayers[socketId];
-        const spawn = SPAWNS[spawnIndex];
-        const playerData = {
-          id: socketId,
-          name: connectedPlayer.name,
-          color: COLORS[spawnIndex % COLORS.length],
-          gridX: spawn.gridX,
-          gridY: spawn.gridY,
-          moveDuration: MOVE_DURATION,
-          direction: "right",
-          movingDirection: null,
-          moveTimer: 0,
-          shootCooldown: 0,
-          alive: true
-        };
-
-        gameState.players[socketId] = playerData;
-        matchState.activePlayers[socketId] = true;
-        spawnIndex += 1;
-      }
-
-      matchState.connectedPlayers = {};
-      emitMatchState();
-      emitGameState();
-      checkForWinner();
+      restartTournament();
     });
 
     socket.on("move", ({ direction } = {}) => {

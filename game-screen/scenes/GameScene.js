@@ -42,8 +42,17 @@ export class GameScene extends Phaser.Scene {
         this.socket = null;
         this.statusText = null;
         this.roundText = null;
+        this.roundSubtitleText = null;
         this.roundTextValue = "";
         this.roundTextHideEvent = null;
+        this.roundBanner = null;
+        this.roundBannerShadow = null;
+        this.roundBannerGlow = null;
+        this.roundBannerPanel = null;
+        this.roundBannerInner = null;
+        this.roundBannerLeftAccent = null;
+        this.roundBannerRightAccent = null;
+        this.roundBannerBaseY = 18;
         this.matchState = null;
         this.pendingMatchState = null;
         this.hasWinner = false;
@@ -96,6 +105,9 @@ export class GameScene extends Phaser.Scene {
     preload() {
         if (!this.textures.exists("mountain-bg")) {
             this.load.image("mountain-bg", "assets/mountain-bg.jpg");
+        }
+        if (!this.textures.exists("projectile-fireball")) {
+            this.load.image("projectile-fireball", "assets/projectile-fireball.png");
         }
         this.load.image("mainAssets", "assets/mainAssets.png");
     
@@ -162,20 +174,52 @@ export class GameScene extends Phaser.Scene {
     }
 
     createRoundText() {
-        this.roundText = this.add.text(this.scale.width / 2, 20, "", {
-            color: "#fff3b0",
-            fontSize: "26px",
-            backgroundColor: "#07111b",
-            padding: {
-                x: 14,
-                y: 8
-            }
-        });
+        const centerX = this.scale.width / 2;
 
-        this.roundText.setOrigin(0.5, 0);
-        this.roundText.setScrollFactor(0);
-        this.roundText.setDepth(110);
-        this.roundText.setVisible(false);
+        this.roundBanner = this.add.container(centerX, this.roundBannerBaseY);
+        this.roundBanner.setScrollFactor(0);
+        this.roundBanner.setDepth(110);
+        this.roundBanner.setVisible(false);
+        this.roundBanner.setAlpha(0);
+
+        this.roundBannerShadow = this.add.rectangle(0, 42, 554, 92, 0x01060a, 0.42);
+        this.roundBannerGlow = this.add.rectangle(0, 40, 470, 62, 0x7fd6ff, 0.12);
+        this.roundBannerPanel = this.add.rectangle(0, 38, 520, 78, 0x08131d, 0.94)
+            .setStrokeStyle(3, 0xa7ebff, 0.82);
+        this.roundBannerInner = this.add.rectangle(0, 38, 484, 52, 0x102436, 0.88)
+            .setStrokeStyle(1, 0xffd67a, 0.22);
+        this.roundBannerLeftAccent = this.add.rectangle(-205, 38, 52, 6, 0xffd67a, 1).setAngle(-24);
+        this.roundBannerRightAccent = this.add.rectangle(205, 38, 52, 6, 0xffd67a, 1).setAngle(24);
+
+        this.roundSubtitleText = this.add.text(0, 18, "", {
+            color: "#d6efff",
+            fontSize: "13px",
+            fontStyle: "bold",
+            fontFamily: "Arial",
+            letterSpacing: 2
+        }).setOrigin(0.5);
+
+        this.roundText = this.add.text(0, 44, "", {
+            color: "#fff3b0",
+            fontSize: "34px",
+            fontStyle: "bold",
+            fontFamily: "Arial Black, Arial",
+            stroke: "#17334c",
+            strokeThickness: 6
+        }).setOrigin(0.5);
+
+        this.roundText.setShadow(0, 4, "rgba(0, 0, 0, 0.35)", 8);
+
+        this.roundBanner.add([
+            this.roundBannerShadow,
+            this.roundBannerGlow,
+            this.roundBannerPanel,
+            this.roundBannerInner,
+            this.roundBannerLeftAccent,
+            this.roundBannerRightAccent,
+            this.roundSubtitleText,
+            this.roundText
+        ]);
     }
 
     connectToServer() {
@@ -508,19 +552,23 @@ export class GameScene extends Phaser.Scene {
         serverProjectiles.forEach((serverProjectile) => {
             const targetX = this.gridToWorldX(serverProjectile.gridX);
             const targetY = this.gridToWorldY(serverProjectile.gridY);
-            const fillColor = this.parseColor(serverProjectile.color);
+            const projectileAngle = this.getProjectileAngle(serverProjectile.direction);
 
             if (!this.projectiles.has(serverProjectile.id)) {
-                const projectile = this.add.circle(targetX, targetY, 10, fillColor);
+                const projectile = this.add.sprite(targetX, targetY, "projectile-fireball");
+                projectile.setDisplaySize(70, 35);
+                projectile.setAngle(projectileAngle);
                 projectile.gridX = serverProjectile.gridX;
                 projectile.gridY = serverProjectile.gridY;
+                projectile.direction = serverProjectile.direction;
                 projectile.setDepth(50);
                 this.projectiles.set(serverProjectile.id, projectile);
                 return;
             }
 
             const projectile = this.projectiles.get(serverProjectile.id);
-            projectile.setFillStyle(fillColor);
+            projectile.setAngle(projectileAngle);
+            projectile.direction = serverProjectile.direction;
 
             if (projectile.gridX === serverProjectile.gridX && projectile.gridY === serverProjectile.gridY) {
                 return;
@@ -547,6 +595,20 @@ export class GameScene extends Phaser.Scene {
             projectile.destroy();
             this.projectiles.delete(id);
         });
+    }
+
+    getProjectileAngle(direction) {
+        switch (direction) {
+            case "left":
+                return 180;
+            case "up":
+                return -90;
+            case "down":
+                return 90;
+            case "right":
+            default:
+                return 0;
+        }
     }
 
     showHitPopup(data) {
@@ -598,16 +660,16 @@ export class GameScene extends Phaser.Scene {
         const rays = this.createVictoryRays(centerX, centerY - 10);
         this.victoryRays = rays;
 
-        const panel = this.add.rectangle(centerX, centerY + 10, 760, 360, 0x091421, 0.86)
+        const panel = this.add.rectangle(centerX, centerY + 10, 920, 440, 0x091421, 0.86)
             .setStrokeStyle(4, 0xffd67a, 0.75);
-        const innerPanel = this.add.rectangle(centerX, centerY + 10, 708, 308, 0x102436, 0.82)
+        const innerPanel = this.add.rectangle(centerX, centerY + 10, 860, 376, 0x102436, 0.82)
             .setStrokeStyle(2, 0xa7ebff, 0.26);
 
-        const topLine = this.add.rectangle(centerX, centerY - 114, 420, 4, 0xa7ebff, 0.55);
-        const bottomLine = this.add.rectangle(centerX, centerY + 136, 420, 4, 0xffd67a, 0.55);
+        const topLine = this.add.rectangle(centerX, centerY - 142, 520, 5, 0xa7ebff, 0.55);
+        const bottomLine = this.add.rectangle(centerX, centerY + 172, 520, 5, 0xffd67a, 0.55);
 
-        const title = this.add.text(centerX, centerY - 82, "VICTOIRE", {
-            fontSize: "66px",
+        const title = this.add.text(centerX, centerY - 104, "VICTOIRE", {
+            fontSize: "84px",
             fontStyle: "bold",
             color: "#fff2bf",
             fontFamily: "Arial Black, Arial",
@@ -615,35 +677,35 @@ export class GameScene extends Phaser.Scene {
             strokeThickness: 8
         }).setOrigin(0.5);
 
-        this.victoryWinnerText = this.add.text(centerX, centerY + 2, winnerName, {
-            fontSize: "56px",
+        this.victoryWinnerText = this.add.text(centerX, centerY + 16, winnerName, {
+            fontSize: "74px",
             fontStyle: "bold",
             color: "#ffffff",
             fontFamily: "Arial Black, Arial",
             align: "center",
-            wordWrap: { width: 620, useAdvancedWrap: true }
+            wordWrap: { width: 760, useAdvancedWrap: true }
         }).setOrigin(0.5);
 
-        this.victorySubtitleText = this.add.text(centerX, centerY + 82, "remporte le tournoi", {
-            fontSize: "24px",
+        this.victorySubtitleText = this.add.text(centerX, centerY + 108, "remporte le tournoi", {
+            fontSize: "32px",
             color: "#dceef7",
             fontFamily: "Arial"
         }).setOrigin(0.5);
 
-        const hint = this.add.text(centerX, centerY + 130, "Tournoi termine", {
-            fontSize: "20px",
+        const hint = this.add.text(centerX, centerY + 168, "Tournoi termine", {
+            fontSize: "24px",
             color: "#ffcf80",
             fontFamily: "Arial",
             letterSpacing: 2
         }).setOrigin(0.5);
 
-        this.restartButton = this.add.rectangle(centerX, centerY + 190, 260, 68, 0x2dbd4f, 1)
+        this.restartButton = this.add.rectangle(centerX, centerY + 242, 340, 86, 0x2dbd4f, 1)
             .setStrokeStyle(4, 0xcaffd5, 0.95)
             .setInteractive({ useHandCursor: true })
             .setScrollFactor(0)
             .setDepth(520);
-        this.restartButtonText = this.add.text(centerX, centerY + 190, "RELANCER", {
-            fontSize: "28px",
+        this.restartButtonText = this.add.text(centerX, centerY + 242, "RELANCER", {
+            fontSize: "36px",
             fontStyle: "bold",
             color: "#0d2412",
             fontFamily: "Arial Black, Arial"
@@ -751,7 +813,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     setRoundText(message) {
-        if (!this.roundText) {
+        if (!this.roundText || !this.roundBanner) {
             return;
         }
 
@@ -761,10 +823,15 @@ export class GameScene extends Phaser.Scene {
                 this.roundTextHideEvent = null;
             }
 
+            this.tweens.killTweensOf(this.roundBanner);
+            this.tweens.killTweensOf(this.roundBannerGlow);
             this.roundTextValue = "";
             this.roundText.setText("");
-            this.roundText.setAlpha(1);
-            this.roundText.setVisible(false);
+            this.roundSubtitleText?.setText("");
+            this.roundBanner.setAlpha(1);
+            this.roundBanner.setScale(1);
+            this.roundBanner.setY(this.roundBannerBaseY);
+            this.roundBanner.setVisible(false);
             return;
         }
 
@@ -777,23 +844,97 @@ export class GameScene extends Phaser.Scene {
             this.roundTextHideEvent = null;
         }
 
+        this.tweens.killTweensOf(this.roundBanner);
+        this.tweens.killTweensOf(this.roundBannerGlow);
+
+        const bannerStyle = this.getRoundBannerStyle(message);
         this.roundTextValue = message;
-        this.roundText.setText(message);
-        this.roundText.setAlpha(1);
-        this.roundText.setVisible(true);
+        this.roundText.setText(message.toUpperCase());
+        this.roundSubtitleText?.setText(bannerStyle.subtitle);
+        this.roundText.setColor(bannerStyle.titleColor);
+        this.roundText.setStroke(bannerStyle.titleStroke, 6);
+        this.roundSubtitleText?.setColor(bannerStyle.subtitleColor);
+        this.roundBannerPanel.setFillStyle(this.parseColor(bannerStyle.panelFill), 0.95);
+        this.roundBannerPanel.setStrokeStyle(3, this.parseColor(bannerStyle.panelStroke), 0.84);
+        this.roundBannerInner.setFillStyle(this.parseColor(bannerStyle.innerFill), 0.88);
+        this.roundBannerInner.setStrokeStyle(1, this.parseColor(bannerStyle.innerStroke), 0.3);
+        this.roundBannerGlow.setFillStyle(this.parseColor(bannerStyle.glowFill), 0.16);
+        this.roundBannerLeftAccent.setFillStyle(this.parseColor(bannerStyle.accentFill), 1);
+        this.roundBannerRightAccent.setFillStyle(this.parseColor(bannerStyle.accentFill), 1);
+
+        this.roundBanner.setVisible(true);
+        this.roundBanner.setAlpha(0);
+        this.roundBanner.setScale(0.94);
+        this.roundBanner.setY(this.roundBannerBaseY - 10);
+        this.roundBannerGlow.setScale(0.9, 0.92);
+
+        this.tweens.add({
+            targets: this.roundBanner,
+            alpha: 1,
+            scaleX: 1,
+            scaleY: 1,
+            y: this.roundBannerBaseY,
+            duration: 320,
+            ease: "Back.Out"
+        });
+
+        this.tweens.add({
+            targets: this.roundBannerGlow,
+            scaleX: 1.06,
+            scaleY: 1.12,
+            alpha: { from: 0.12, to: 0.24 },
+            duration: 360,
+            yoyo: true,
+            ease: "Sine.Out"
+        });
 
         this.roundTextHideEvent = this.time.delayedCall(2200, () => {
             this.tweens.add({
-                targets: this.roundText,
+                targets: this.roundBanner,
                 alpha: 0,
-                duration: 250,
+                y: this.roundBannerBaseY - 8,
+                duration: 260,
                 onComplete: () => {
-                    this.roundText.setVisible(false);
-                    this.roundText.setAlpha(1);
+                    this.roundBanner.setVisible(false);
+                    this.roundBanner.setAlpha(1);
+                    this.roundBanner.setScale(1);
+                    this.roundBanner.setY(this.roundBannerBaseY);
                 }
             });
             this.roundTextHideEvent = null;
         });
+    }
+
+    getRoundBannerStyle(message) {
+        const normalized = String(message || "").toLowerCase();
+
+        if (normalized.includes("final")) {
+            return {
+                subtitle: "AFFRONTEMENT FINAL",
+                titleColor: "#fff1bf",
+                titleStroke: "#5a2200",
+                subtitleColor: "#ffd7a1",
+                panelFill: "#2b1208",
+                panelStroke: "#ffb25c",
+                innerFill: "#4a1d0a",
+                innerStroke: "#ffe2ad",
+                glowFill: "#ff8a3d",
+                accentFill: "#ffd67a"
+            };
+        }
+
+        return {
+            subtitle: "MANCHE DE QUALIFICATION",
+            titleColor: "#f4fbff",
+            titleStroke: "#13344d",
+            subtitleColor: "#cdefff",
+            panelFill: "#08131d",
+            panelStroke: "#8fe7ff",
+            innerFill: "#163046",
+            innerStroke: "#ffe3a0",
+            glowFill: "#5ecbff",
+            accentFill: "#ffd67a"
+        };
     }
 
     requestTournamentRestart() {
