@@ -81,6 +81,8 @@
       width: 30%;
       height: 30%;
       border: none;
+      outline: 3px solid rgba(255, 255, 255, 0.95);
+      outline-offset: -1px;
       border-radius: 16px;
       background: var(--player-accent);
       color: white;
@@ -129,6 +131,8 @@
       min-width: 120px;
       min-height: 120px;
       border: none;
+      outline: 4px solid rgba(255, 255, 255, 0.95);
+      outline-offset: -1px;
       border-radius: 50%;
       background: var(--player-accent-strong);
       color: white;
