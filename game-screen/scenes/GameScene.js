@@ -561,9 +561,10 @@ export class GameScene extends Phaser.Scene {
         const baseScaleX = player.baseScaleX ?? player.scaleX;
         const baseScaleY = player.baseScaleY ?? player.scaleY;
         const isHorizontal = dir === "left" || dir === "right";
-        const targetScaleX = isHorizontal ? baseScaleX * 0.88 : baseScaleX * 1.06;
-        const targetScaleY = isHorizontal ? baseScaleY * 1.08 : baseScaleY * 0.9;
-        const targetAngle = dir === "left" ? -6 : dir === "right" ? 6 : 0;
+        const targetScaleX = isHorizontal ? baseScaleX * 0.8 : baseScaleX * 1.1;
+        const targetScaleY = isHorizontal ? baseScaleY * 1.15 : baseScaleY * 0.82;
+        const targetAngle = dir === "left" ? -10 : dir === "right" ? 10 : 0;
+        const stepDuration = Math.max(35, Math.floor(moveDuration / 4));
 
         this.resetPlayerWalkPose(player);
 
@@ -572,9 +573,10 @@ export class GameScene extends Phaser.Scene {
             scaleX: targetScaleX,
             scaleY: targetScaleY,
             angle: targetAngle,
-            duration: Math.max(60, Math.floor(moveDuration / 2)),
+            duration: stepDuration,
             yoyo: true,
-            ease: "Sine.InOut",
+            repeat: 1,
+            ease: "Quad.InOut",
             onComplete: () => this.resetPlayerWalkPose(player)
         });
     }
