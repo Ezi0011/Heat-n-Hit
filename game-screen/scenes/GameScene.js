@@ -20,7 +20,7 @@ const TILE_MAP = {
 
 const CHAR_START_X = 706;
 const CHAR_START_Y = 17;
-const CHAR_SPACING_VERTICAL = 23;
+const CHAR_SPACING_VERTICAL = 24;
 const CHAR_SPACING_HORIZONTAL = 20;
 
 export class GameScene extends Phaser.Scene {
@@ -262,6 +262,8 @@ export class GameScene extends Phaser.Scene {
                 player.setDisplaySize(64, 64);
                 player.setDepth(100);
 
+                player.assignedColorIndex = colorIndex;
+
                 const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
                     fontSize: "14px",
                     color: "#ffffff",
@@ -276,7 +278,8 @@ export class GameScene extends Phaser.Scene {
                 return;
             } else {
                 const player = this.players.get(id);
-                player.setFrame(frameName);
+                const modelRow = player.assignedColorIndex;
+                player.setFrame(`player_${modelRow}_${dir}`);
             }
 
             const player = this.players.get(id);

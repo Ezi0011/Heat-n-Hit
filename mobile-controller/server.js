@@ -18,12 +18,22 @@ const MAP_ROWS = 18;
 const MOVE_DURATION = 120;
 
 const COLORS = [
-  "#ff595e",
-  "#1982c4",
-  "#8ac926",
-  "#ffca3a",
-  "#6a4c93",
-  "#ff924c"
+  "#000000",
+  "#575757",
+  "#ad2323",
+  "#2a4bd7",
+  "#1c6914",
+  "#814a19",
+  "#631e93",
+  "#a0a0a0",
+  "#81c57a",
+  "#9dafff",
+  "#29d0d0",
+  "#ff9233",
+  "#ffee33",
+  "#e9debb",
+  "#ffcdf3",
+  "#ffffff"
 ];
 
 app.use(express.static(ROOT_DIR));
@@ -362,6 +372,7 @@ async function startServer() {
           id: socketId,
           name: connectedPlayer.name,
           color: COLORS[spawnIndex % COLORS.length],
+          colorIndex: spawnIndex % 16,
           gridX: spawn.gridX,
           gridY: spawn.gridY,
           moveDuration: MOVE_DURATION,
