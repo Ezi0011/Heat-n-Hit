@@ -8,6 +8,8 @@
       --player-accent-strong: #ff6b35;
       --player-accent-soft: rgba(74, 38, 240, 0.24);
       --player-panel: rgba(255, 255, 255, 0.08);
+      --player-control-outline: rgba(255, 255, 255, 0.95);
+      --player-control-text: #ffffff;
     }
 
     html, body {
@@ -81,11 +83,11 @@
       width: 30%;
       height: 30%;
       border: none;
-      outline: 3px solid rgba(255, 255, 255, 0.95);
+      outline: 3px solid var(--player-control-outline);
       outline-offset: -1px;
       border-radius: 16px;
       background: var(--player-accent);
-      color: white;
+      color: var(--player-control-text);
       font-size: clamp(22px, 5vw, 34px);
       font-weight: bold;
       display: flex;
@@ -131,11 +133,11 @@
       min-width: 120px;
       min-height: 120px;
       border: none;
-      outline: 4px solid rgba(255, 255, 255, 0.95);
+      outline: 4px solid var(--player-control-outline);
       outline-offset: -1px;
       border-radius: 50%;
       background: var(--player-accent-strong);
-      color: white;
+      color: var(--player-control-text);
       font-size: clamp(20px, 4.2vw, 28px);
       font-weight: 900;
       box-shadow: 0 12px 24px var(--player-accent-soft);

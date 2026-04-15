@@ -76,15 +76,25 @@ function mixColors(baseColor, targetColor, ratio) {
 }
 
 function applyPlayerTheme(color) {
-  if (!hexToRgb(color)) {
+  const rgb = hexToRgb(color);
+  if (!rgb) {
     return;
   }
 
+  const normalized = color.replace("#", "").toLowerCase();
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty("--player-accent", color);
   rootStyle.setProperty("--player-accent-strong", mixColors(color, "#ffffff", 0.14));
   rootStyle.setProperty("--player-accent-soft", `${color}33`);
   rootStyle.setProperty("--player-panel", `${mixColors(color, "#ffffff", 0.18)}22`);
+  rootStyle.setProperty(
+    "--player-control-outline",
+    normalized === "ffffff" ? "rgba(0, 0, 0, 0.95)" : "rgba(255, 255, 255, 0.95)"
+  );
+  rootStyle.setProperty(
+    "--player-control-text",
+    normalized === "ffffff" ? "#000000" : "#ffffff"
+  );
 }
 
 function getSelfState() {

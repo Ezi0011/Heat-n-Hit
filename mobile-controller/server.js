@@ -985,6 +985,12 @@ async function startServer() {
       }
 
       shootProjectile(player);
+      io.emit("playerShot", {
+        playerId: player.id,
+        direction: player.direction,
+        gridX: player.gridX,
+        gridY: player.gridY
+      });
       player.shootCooldown = SHOOT_COOLDOWN_TICKS;
       emitGameState();
     });

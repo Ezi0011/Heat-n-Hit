@@ -108,6 +108,9 @@ export class BootScene extends Phaser.Scene {
 
     preload() {
         this.load.image("launch-bg", "assets/launch-bg.png");
+        if (!this.cache.audio.exists("game-theme")) {
+            this.load.audio("game-theme", "assets/game-theme.mp3");
+        }
     }
 
     create() {
@@ -131,8 +134,18 @@ export class BootScene extends Phaser.Scene {
         this.scale.on("resize", this.handleSceneResize, this);
         this.input.on("wheel", this.handleSceneWheel, this);
         this.input.on("drag", this.handleScrollbarDrag, this);
+        this.input.on("pointerdown", this.resumeAudioContext, this);
         this.events.once("shutdown", this.handleSceneShutdown, this);
         this.events.once("destroy", this.handleSceneShutdown, this);
+    }
+
+    resumeAudioContext() {
+        const soundContext = this.sound?.context;
+        if (soundContext?.state === "suspended") {
+            soundContext.resume();
+        }
+
+        this.playGameTheme();
     }
 
     connectToServer() {
@@ -160,6 +173,7 @@ export class BootScene extends Phaser.Scene {
     renderLaunchScreen() {
         this.currentScreen = "launch";
         this.clearScreen();
+        this.playGameTheme();
 
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
@@ -205,6 +219,7 @@ export class BootScene extends Phaser.Scene {
     renderWaitingScreen() {
         this.currentScreen = "waiting";
         this.clearScreen();
+        this.playGameTheme();
 
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
@@ -535,6 +550,24 @@ export class BootScene extends Phaser.Scene {
         glow.fillEllipse(width / 2, height * 0.82, width * 0.6, height * 0.18);
     }
 
+    playGameTheme() {
+        if (!this.sound || !this.cache.audio.exists("game-theme")) {
+            return;
+        }
+
+        const existingTheme = this.sound.get("game-theme");
+        if (existingTheme?.isPlaying) {
+            return;
+        }
+
+        const gameTheme = existingTheme || this.sound.add("game-theme", {
+            loop: true,
+            volume: 0.14
+        });
+
+        gameTheme.play();
+    }
+
     createQrCodeBlock(qrLeft, qrTop, textWidth) {
         this.removeQrCodeBlock();
 
@@ -706,6 +739,7 @@ export class BootScene extends Phaser.Scene {
         this.scale.off("resize", this.handleSceneResize, this);
         this.input.off("wheel", this.handleSceneWheel, this);
         this.input.off("drag", this.handleScrollbarDrag, this);
+        this.input.off("pointerdown", this.resumeAudioContext, this);
         this.removeQrCodeBlock();
     }
 

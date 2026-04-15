@@ -63,6 +63,8 @@ export class GameScene extends Phaser.Scene {
         this.restartButton = null;
         this.restartButtonText = null;
         this.isRestartingTournament = false;
+        this.gameTheme = null;
+        this.finalTheme = null;
 
         this.handleSocketConnect = () => {
             this.refreshStatus();
@@ -82,7 +84,12 @@ export class GameScene extends Phaser.Scene {
         };
 
         this.handlePlayerHit = (data) => {
+            this.playPlayerHitSound();
             this.showHitPopup(data);
+        };
+
+        this.handlePlayerShot = () => {
+            this.playProjectileShootSound();
         };
 
         this.handlePlayerWon = (data) => {
@@ -108,6 +115,18 @@ export class GameScene extends Phaser.Scene {
         }
         if (!this.textures.exists("projectile-fireball")) {
             this.load.image("projectile-fireball", "assets/projectile-fireball.png");
+        }
+        if (!this.cache.audio.exists("blaster-shot")) {
+            this.load.audio("blaster-shot", "assets/blaster-shot.wav");
+        }
+        if (!this.cache.audio.exists("player-hit")) {
+            this.load.audio("player-hit", "assets/player-hit.mp3");
+        }
+        if (!this.cache.audio.exists("game-theme")) {
+            this.load.audio("game-theme", "assets/game-theme.mp3");
+        }
+        if (!this.cache.audio.exists("final-theme")) {
+            this.load.audio("final-theme", "assets/final-theme.mp3");
         }
         this.load.image("mainAssets", "assets/mainAssets.png");
     
@@ -141,6 +160,13 @@ export class GameScene extends Phaser.Scene {
         this.setupFixedCamera();
         this.connectToServer();
         this.events.once("shutdown", () => this.detachSocketListeners());
+        this.events.once("shutdown", () => this.input.off("pointerdown", this.resumeAudioContext, this));
+        this.events.once("shutdown", () => this.stopGameTheme());
+        this.events.once("shutdown", () => this.stopFinalTheme());
+        this.events.once("destroy", () => this.input.off("pointerdown", this.resumeAudioContext, this));
+        this.events.once("destroy", () => this.stopGameTheme());
+        this.events.once("destroy", () => this.stopFinalTheme());
+        this.input.on("pointerdown", this.resumeAudioContext, this);
 
         if (this.pendingMatchState) {
             this.applyMatchState(this.pendingMatchState);
@@ -239,6 +265,7 @@ export class GameScene extends Phaser.Scene {
         this.socket.on("gameState", this.handleGameState);
         this.socket.on("matchState", this.handleMatchState);
         this.socket.on("playerHit", this.handlePlayerHit);
+        this.socket.on("playerShot", this.handlePlayerShot);
         this.socket.on("playerWon", this.handlePlayerWon);
     }
 
@@ -252,6 +279,7 @@ export class GameScene extends Phaser.Scene {
         this.socket.off("gameState", this.handleGameState);
         this.socket.off("matchState", this.handleMatchState);
         this.socket.off("playerHit", this.handlePlayerHit);
+        this.socket.off("playerShot", this.handlePlayerShot);
         this.socket.off("playerWon", this.handlePlayerWon);
     }
 
@@ -259,11 +287,25 @@ export class GameScene extends Phaser.Scene {
         this.matchState = state;
 
         if (state.phase === "lobby") {
+            this.stopGameTheme();
+            this.stopFinalTheme();
             this.scene.start("BootScene", {
                 socket: this.socket,
                 matchState: state
             });
             return;
+        }
+
+        const shouldPlayFinalTheme =
+            state.phase === "final" ||
+            (state.state === "completed" && state.currentRound?.type === "final");
+
+        if (shouldPlayFinalTheme) {
+            this.stopGameTheme();
+            this.playFinalTheme();
+        } else {
+            this.stopFinalTheme();
+            this.playGameTheme();
         }
 
         if (state.state !== "completed") {
@@ -629,6 +671,93 @@ export class GameScene extends Phaser.Scene {
 
             projectile.destroy();
             this.projectiles.delete(id);
+        });
+    }
+
+    resumeAudioContext() {
+        const soundContext = this.sound?.context;
+        if (soundContext?.state === "suspended") {
+            soundContext.resume();
+        }
+    }
+
+    playGameTheme() {
+        if (!this.sound || !this.cache.audio.exists("game-theme")) {
+            return;
+        }
+
+        const existingTheme = this.sound.get("game-theme");
+        if (existingTheme?.isPlaying) {
+            this.gameTheme = existingTheme;
+            return;
+        }
+
+        this.gameTheme = existingTheme || this.gameTheme || this.sound.add("game-theme", {
+            loop: true,
+            volume: 0.14
+        });
+
+        this.gameTheme.play();
+    }
+
+    stopGameTheme() {
+        this.gameTheme = this.gameTheme || this.sound?.get("game-theme");
+        if (!this.gameTheme) {
+            return;
+        }
+
+        if (this.gameTheme.isPlaying) {
+            this.gameTheme.stop();
+        }
+    }
+
+    playFinalTheme() {
+        if (!this.sound || !this.cache.audio.exists("final-theme")) {
+            return;
+        }
+
+        if (this.finalTheme?.isPlaying) {
+            return;
+        }
+
+        if (!this.finalTheme) {
+            this.finalTheme = this.sound.add("final-theme", {
+                loop: true,
+                volume: 0.16
+            });
+        }
+
+        this.finalTheme.play();
+    }
+
+    stopFinalTheme() {
+        if (!this.finalTheme) {
+            return;
+        }
+
+        if (this.finalTheme.isPlaying) {
+            this.finalTheme.stop();
+        }
+    }
+
+    playProjectileShootSound() {
+        if (!this.sound || !this.cache.audio.exists("blaster-shot")) {
+            return;
+        }
+
+        this.sound.play("blaster-shot", {
+            volume: 0.18,
+            rate: Phaser.Math.FloatBetween(0.98, 1.04)
+        });
+    }
+
+    playPlayerHitSound() {
+        if (!this.sound || !this.cache.audio.exists("player-hit")) {
+            return;
+        }
+
+        this.sound.play("player-hit", {
+            volume: 0.22
         });
     }
 
