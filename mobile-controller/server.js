@@ -59,7 +59,13 @@ async function startServer() {
   const SPAWNS = MapGenerator.generateSpawns(MAP_COLS, MAP_ROWS);
   const MAX_PLAYERS = SPAWNS.length * QUARTER_COUNT;
 
-  const createFreshMap = () => MapGenerator.createMap(MAP_COLS, MAP_ROWS);
+  const createFreshMap = (roundType = "quarterfinal") => {
+    if (roundType === "final") {
+      return MapGenerator.createFinalMap(MAP_COLS, MAP_ROWS);
+    }
+
+    return MapGenerator.createMap(MAP_COLS, MAP_ROWS);
+  };
 
   function getLocalIpAddress() {
     const interfaces = os.networkInterfaces();
@@ -248,8 +254,8 @@ async function startServer() {
     return gridY;
   }
 
-  function resetArena() {
-    gameState.map = createFreshMap();
+  function resetArena(roundType = "quarterfinal") {
+    gameState.map = createFreshMap(roundType);
     gameState.projectiles = [];
     gameState.players = {};
   }
@@ -433,7 +439,7 @@ async function startServer() {
         : getQualifierCount(participantIds.length)
     };
 
-    resetArena();
+    resetArena(resolvedRoundConfig.type);
     assignRoundColors(participantIds);
 
     matchState.state = "transition";
@@ -447,11 +453,14 @@ async function startServer() {
       updateStatusesForFinalSetup(resolvedRoundConfig.participantIds);
     }
 
-    resolvedRoundConfig.participantIds.forEach((playerId, spawnIndex) => {
+    const shuffledSpawnIndexes = shuffleArray(SPAWNS.map((_spawn, index) => index));
+
+    resolvedRoundConfig.participantIds.forEach((playerId, participantIndex) => {
       if (!matchState.registeredPlayers[playerId]) {
         return;
       }
 
+      const spawnIndex = shuffledSpawnIndexes[participantIndex];
       gameState.players[playerId] = createActivePlayer(playerId, spawnIndex);
     });
 
