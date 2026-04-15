@@ -265,7 +265,7 @@ export class BootScene extends Phaser.Scene {
             scrollbarTrackHeight: listHeight - 36
         };
 
-        this.connectionInfoText = this.add.text(centerX, panelBottom - 86, "En attente de joueurs...", {
+        this.connectionInfoText = this.add.text(centerX, panelBottom - 92, "En attente de joueurs...", {
             fontSize: "17px",
             color: "#cbe6f5",
             fontFamily: "Arial",
