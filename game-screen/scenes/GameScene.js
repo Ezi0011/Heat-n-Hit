@@ -106,6 +106,9 @@ export class GameScene extends Phaser.Scene {
         if (!this.textures.exists("mountain-bg")) {
             this.load.image("mountain-bg", "assets/mountain-bg.jpg");
         }
+        if (!this.textures.exists("projectile-fireball")) {
+            this.load.image("projectile-fireball", "assets/projectile-fireball.png");
+        }
         this.load.image("mainAssets", "assets/mainAssets.png");
     
         this.load.on('complete', () => {
@@ -549,19 +552,23 @@ export class GameScene extends Phaser.Scene {
         serverProjectiles.forEach((serverProjectile) => {
             const targetX = this.gridToWorldX(serverProjectile.gridX);
             const targetY = this.gridToWorldY(serverProjectile.gridY);
-            const fillColor = this.parseColor(serverProjectile.color);
+            const projectileAngle = this.getProjectileAngle(serverProjectile.direction);
 
             if (!this.projectiles.has(serverProjectile.id)) {
-                const projectile = this.add.circle(targetX, targetY, 10, fillColor);
+                const projectile = this.add.sprite(targetX, targetY, "projectile-fireball");
+                projectile.setDisplaySize(70, 35);
+                projectile.setAngle(projectileAngle);
                 projectile.gridX = serverProjectile.gridX;
                 projectile.gridY = serverProjectile.gridY;
+                projectile.direction = serverProjectile.direction;
                 projectile.setDepth(50);
                 this.projectiles.set(serverProjectile.id, projectile);
                 return;
             }
 
             const projectile = this.projectiles.get(serverProjectile.id);
-            projectile.setFillStyle(fillColor);
+            projectile.setAngle(projectileAngle);
+            projectile.direction = serverProjectile.direction;
 
             if (projectile.gridX === serverProjectile.gridX && projectile.gridY === serverProjectile.gridY) {
                 return;
@@ -588,6 +595,20 @@ export class GameScene extends Phaser.Scene {
             projectile.destroy();
             this.projectiles.delete(id);
         });
+    }
+
+    getProjectileAngle(direction) {
+        switch (direction) {
+            case "left":
+                return 180;
+            case "up":
+                return -90;
+            case "down":
+                return 90;
+            case "right":
+            default:
+                return 0;
+        }
     }
 
     showHitPopup(data) {
