@@ -26,6 +26,10 @@ function setPlayerInfo(message) {
   playerInfo.textContent = message;
 }
 
+function formatPlayerMessage(name, status) {
+  return `${name || "Joueur"} | ${status}`;
+}
+
 function getSelfState() {
   if (!matchState || !playerId) {
     return null;
@@ -46,54 +50,57 @@ function renderControllerState() {
   }
 
   if (!matchState || !self) {
-    setPlayerInfo(`${playerName || "Joueur"} | en attente de synchronisation`);
+    setPlayerInfo(formatPlayerMessage(playerName, "🔄 En attente de synchronisation..."));
     setControlsEnabled(false);
     return;
   }
 
-  let message = `${self.name} | en attente`;
+  let message = formatPlayerMessage(self.name, "⏳ En attente...");
   let enabled = false;
 
   if (matchState.state === "completed") {
     if (matchState.winner?.id === playerId) {
-      message = `${self.name} | vainqueur du tournoi`;
+      message = formatPlayerMessage(self.name, "🏆 Vainqueur du tournoi !");
     } else {
-      message = `${self.name} | tournoi termine`;
+      message = formatPlayerMessage(self.name, "🎮 Tournoi terminé !");
     }
   } else if (matchState.state === "transition") {
     if (self.status === "qualified") {
-      message = `${self.name} | qualifie pour la finale`;
+      message = formatPlayerMessage(self.name, "🎯 Qualifié pour la finale !");
     } else if (self.status === "eliminated") {
-      message = `${self.name} | elimine`;
+      message = formatPlayerMessage(self.name, "❌ Éliminé...");
     } else {
-      message = `${self.name} | ${matchState.message || "prochaine manche"}`;
+      message = formatPlayerMessage(self.name, `🔜 ${matchState.message || "Prochaine manche !"}`);
     }
   } else {
     switch (self.status) {
       case "waiting":
-        message = `${self.name} | inscrit dans le lobby`;
+        message = formatPlayerMessage(self.name, "🧑‍💻 Inscrit dans le lobby");
         break;
       case "queued":
-        message = `${self.name} | en attente du quart ${self.quarterIndex || "?"}`;
+        message = formatPlayerMessage(self.name, `⏳ En attente du quart ${self.quarterIndex || "?"}`);
         break;
       case "playing":
-        message = `${self.name} | ${roundLabel} en cours`;
+        message = formatPlayerMessage(
+          self.name,
+          matchState.phase === "final" ? "🔥 Finale en cours !" : `⚔️ ${roundLabel} en cours !`
+        );
         enabled = isActive && matchState.state === "playing";
         break;
       case "qualified":
         if (matchState.phase === "final" && isActive) {
-          message = `${self.name} | finale en cours`;
+          message = formatPlayerMessage(self.name, "🔥 Finale en cours !");
           enabled = matchState.state === "playing";
         } else {
-          message = `${self.name} | qualifie pour la finale`;
+          message = formatPlayerMessage(self.name, "🎯 Qualifié pour la finale !");
         }
         break;
       case "winner":
-        message = `${self.name} | vainqueur du tournoi`;
+        message = formatPlayerMessage(self.name, "🏆 Vainqueur du tournoi !");
         break;
       case "eliminated":
       default:
-        message = `${self.name} | elimine`;
+        message = formatPlayerMessage(self.name, "❌ Éliminé...");
         break;
     }
   }
@@ -110,7 +117,7 @@ nameBtn.addEventListener("click", () => {
 
   nameDialog.style.display = "none";
   gameControls.style.display = "flex";
-  setPlayerInfo(`${playerName} | connexion au tournoi...`);
+  setPlayerInfo(formatPlayerMessage(playerName, "🔄 Connexion au tournoi..."));
   setControlsEnabled(false);
   socket.emit("joinAsController", { name: playerName });
 });
@@ -125,7 +132,7 @@ playerNameInput.focus();
 setControlsEnabled(false);
 
 socket.on("connect", () => {
-  setPlayerInfo("Connecte au serveur...");
+  setPlayerInfo("🔌 Connecté au serveur...");
 });
 
 socket.on("joined", (data) => {
@@ -134,7 +141,7 @@ socket.on("joined", (data) => {
     playerName = data.name;
   }
 
-  setPlayerInfo(`${playerName} | inscrit`);
+  setPlayerInfo(formatPlayerMessage(playerName, "🧑‍💻 Inscrit dans le lobby"));
   renderControllerState();
 });
 
@@ -144,7 +151,7 @@ socket.on("matchState", (state) => {
 });
 
 socket.on("matchError", (message) => {
-  setPlayerInfo(message);
+  setPlayerInfo(`⚠️ ${message}`);
   setControlsEnabled(false);
   nameDialog.style.display = "flex";
   gameControls.style.display = "none";
@@ -152,7 +159,7 @@ socket.on("matchError", (message) => {
 });
 
 socket.on("gameFull", () => {
-  setPlayerInfo("Tournoi plein - impossible de rejoindre");
+  setPlayerInfo("🚫 Tournoi plein - impossible de rejoindre");
   nameDialog.style.display = "flex";
   gameControls.style.display = "none";
   playerNameInput.value = "";
@@ -161,22 +168,22 @@ socket.on("gameFull", () => {
 });
 
 socket.on("roundQualified", (data) => {
-  setPlayerInfo(`${playerName} | qualifie apres ${data.roundLabel}`);
+  setPlayerInfo(formatPlayerMessage(playerName, `🎯 Qualifié après ${data.roundLabel} !`));
   setControlsEnabled(false);
 });
 
 socket.on("gameOver", (data) => {
-  setPlayerInfo(`${playerName} | elimine par ${data.killerName}`);
+  setPlayerInfo(formatPlayerMessage(playerName, `❌ Éliminé par ${data.killerName}...`));
   setControlsEnabled(false);
 });
 
 socket.on("gameWon", (data) => {
-  setPlayerInfo(`${playerName} | victoire - ${data.winnerName}`);
+  setPlayerInfo(formatPlayerMessage(playerName, `🏆 Victoire ! ${data.winnerName}`));
   setControlsEnabled(false);
 });
 
 socket.on("disconnect", () => {
-  setPlayerInfo("Deconnecte");
+  setPlayerInfo("📴 Déconnecté");
   setControlsEnabled(false);
 });
 
