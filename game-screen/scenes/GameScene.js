@@ -6,7 +6,6 @@ const TILE_TYPE = {
 };
 
 const TILE_SIZE = 16;
-const SRC_SIZE = 16;
 const TILE_MAP = {
     WALL: { x: 278, y: 20 },
     DESTRUCTIBLE: { x: 392, y: 77 },
@@ -23,10 +22,6 @@ const CHAR_START_X = 706;
 const CHAR_START_Y = 17;
 const CHAR_SPACING_VERTICAL = 23;
 const CHAR_SPACING_HORIZONTAL = 20;
-
-const PROP_START_X = 824;
-const PROP_START_Y = 206;
-const PROP_SPACING = 18;
 
 export class GameScene extends Phaser.Scene {
     constructor() {
@@ -62,13 +57,21 @@ export class GameScene extends Phaser.Scene {
         this.load.image("mainAssets", "assets/mainAssets.png");
     
         this.load.on('complete', () => {
-            const tex = this.textures.get('mainAssets');
-            for (let i = 0; i < 6; i++) {
-                const y = CHAR_START_Y + (i * CHAR_SPACING_VERTICAL);
-                // .add(name, sourceIndex, x, y, width, height)
-                tex.add(`player_${i}`, 0, CHAR_START_X, y, 16, 16);
-            }
-        });
+        const tex = this.textures.get('mainAssets');
+        const directions = ['left', 'right', 'up', 'down'];
+        
+        for (let i = 0; i < 6; i++) {
+            const y = CHAR_START_Y + (i * CHAR_SPACING_VERTICAL);
+            
+            directions.forEach((dir, dirIndex) => {
+                const x = CHAR_START_X + (dirIndex * CHAR_SPACING_HORIZONTAL);
+                // Naming scheme: player_0_left, player_1_up, etc.
+                if (!tex.has(`player_${i}_${dir}`)) {
+                    tex.add(`player_${i}_${dir}`, 0, x, y, 16, 16);
+                }
+            });
+        }
+    });
     }
 
     create() {
@@ -189,8 +192,6 @@ export class GameScene extends Phaser.Scene {
         ctx.fillStyle = '#161616';
         ctx.fillRect(0, 0, this.worldWidth, this.worldHeight);
 
-        let charIndex = 0;
-
         for (let row = 0; row < this.mapRows; row++) {
             for (let col = 0; col < this.mapCols; col++) {
                 const dx = col * this.tileSize;
@@ -220,39 +221,6 @@ export class GameScene extends Phaser.Scene {
                     groundSource.x, groundSource.y, TILE_SIZE, TILE_SIZE,
                     dx, dy, this.tileSize, this.tileSize
                 );
-
-                /*
-                if (tileType === TILE_TYPE.BASIC) {
-                    const propIdx = this.propLayout[row] ? this.propLayout[row][col] : -1;
-                    if (propIdx !== -1) {
-                        const propCol = Math.floor(propIdx / 4);
-                        const propRow = propIdx % 4;
-                        const px = PROP_START_X + (propCol * PROP_SPACING);
-                        const py = PROP_START_Y + (propRow * PROP_SPACING);
-
-                        ctx.drawImage(
-                            tilesetImg, 
-                            px, py, SRC_SIZE, SRC_SIZE, 
-                            dx, dy, this.tileSize, this.tileSize
-                        );
-                    }
-                }
-
-                /*
-                // --- LAYER 3: CHARACTERS (OVERLAY) ---
-                // Only draw characters if it's a SPAWN tile
-                if (tileType === TILE_TYPE.SPAWN) {
-                    const cx = CHAR_START_X;
-                    const cy = CHAR_START_Y + (charIndex * CHAR_SPACING_VERTICAL);
-                    charIndex += 1;
-
-                    ctx.drawImage(
-                        tilesetImg, 
-                        cx, cy, SRC_SIZE, SRC_SIZE, 
-                        dx, dy, this.tileSize, this.tileSize
-                    );
-                }
-                */
             }
         }
 
@@ -280,12 +248,16 @@ export class GameScene extends Phaser.Scene {
             const serverPlayer = serverPlayers[id];
             const targetX = this.gridToWorldX(serverPlayer.gridX);
             const targetY = this.gridToWorldY(serverPlayer.gridY);
+            const dir = serverPlayer.direction || "down"; // Default to down if undefined
+            let colorIndex;
 
             if (!this.players.has(id)) {
 
-                const colorIndex = serverPlayer.colorIndex || 0;
-                const player = this.add.sprite(targetX, targetY, "mainAssets", `player_${colorIndex}`);
-                player.setDisplaySize(48, 48);
+                colorIndex = serverPlayer.colorIndex || 0;
+                const player = this.add.sprite(targetX, targetY, "mainAssets", `player_${colorIndex}_${dir}`);
+                player.setCrop(2, 2, 6, 12);
+                player.setDisplaySize(64, 64);
+                player.setOrigin(0.33, 0.5);
                 player.setDepth(100);
 
                 const nameText = this.add.text(targetX, targetY - 30, serverPlayer.name || "Player", {
@@ -304,6 +276,7 @@ export class GameScene extends Phaser.Scene {
 
             const player = this.players.get(id);
             const nameText = this.playerNames.get(id);
+            player.setFrame(`player_${colorIndex}_${dir}`);
 
             if (player.gridX === serverPlayer.gridX && player.gridY === serverPlayer.gridY) {
                 return;
