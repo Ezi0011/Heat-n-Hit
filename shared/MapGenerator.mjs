@@ -70,7 +70,7 @@ export class MapGenerator {
 
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
-                
+
                 // Ne jamais écraser un spawn
                 if (map[y][x] !== 0) {
                     continue;
@@ -96,7 +96,7 @@ export class MapGenerator {
                     } else {
                         map[y][x] = this.MUR_DESTRUCTIBLE;
                     }
-                    
+
                 }
 
             }
@@ -104,27 +104,26 @@ export class MapGenerator {
     }
 
     static placeSpawnProtectionWalls(map, spawns, width, height) {
-    const dist = 2;
+        const dist = 2;
 
-    for (const spawn of spawns) {
-        const positions = [
-            //{ x: spawn.x, y: spawn.y - dist },
-            //{ x: spawn.x, y: spawn.y + dist },
-            { x: spawn.x - dist, y: spawn.y },
-            { x: spawn.x + dist, y: spawn.y }
-        ];
+        for (const spawn of spawns) {
+            const positions = [
+                //{ x: spawn.x, y: spawn.y - dist },
+                //{ x: spawn.x, y: spawn.y + dist },
+                { x: spawn.x - dist, y: spawn.y },
+                { x: spawn.x + dist, y: spawn.y }
+            ];
 
-        for (const pos of positions) {
-            if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) {
-                continue;
-            }
+            for (const pos of positions) {
+                if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) {
+                    continue;
+                }
 
-            if (map[pos.y][pos.x] === 0) {
                 map[pos.y][pos.x] = 1;
+
             }
         }
     }
-}
 
     static placeSpawns(map, spawns) {
         spawns.forEach(spawn => {
