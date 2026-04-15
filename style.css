@@ -1,0 +1,88 @@
+:root {
+    --primary: #ff4500;
+    --secondary: #ff8c00;
+    --bg-dark: #1a1a1a;
+    --card-bg: #2d2d2d;
+    --text: #f0f0f0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-dark);
+    color: var(--text);
+    margin: 0;
+    line-height: 1.6;
+    padding-bottom: 2rem;
+}
+
+header {
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    padding: 3rem 1rem;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+header h1 {
+    margin: 0;
+    font-size: 3.5rem;
+    letter-spacing: 4px;
+    text-shadow: 2px 2px 0px #000;
+}
+
+main {
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.card {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-left: 5px solid var(--primary);
+    transition: transform 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+h2 {
+    color: var(--secondary);
+    margin-top: 0;
+}
+
+.controls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.control-item {
+    background: #3d3d3d;
+    padding: 1rem;
+    border-radius: 4px;
+    text-align: center;
+}
+
+ul {
+    padding-left: 1.2rem;
+}
+
+li {
+    margin-bottom: 0.5rem;
+}
+
+footer {
+    text-align: center;
+    font-size: 0.9rem;
+    opacity: 0.7;
+}
+
+@media (max-width: 600px) {
+    .controls-grid {
+        grid-template-columns: 1fr;
+    }
+}
