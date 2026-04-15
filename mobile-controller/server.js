@@ -853,41 +853,7 @@ async function startServer() {
         return;
       }
 
-      matchState.state = "playing";
-      gameState.players = {};
-      matchState.activePlayers = {};
-
-      let spawnIndex = 0;
-      for (const socketId of connectedIds) {
-        if (spawnIndex >= SPAWNS.length) {
-          break;
-        }
-
-        const connectedPlayer = matchState.connectedPlayers[socketId];
-        const spawn = SPAWNS[spawnIndex];
-        const playerData = {
-          id: socketId,
-          name: connectedPlayer.name,
-          color: COLORS[spawnIndex % COLORS.length],
-          gridX: spawn.gridX,
-          gridY: spawn.gridY,
-          moveDuration: MOVE_DURATION,
-          direction: "right",
-          movingDirection: null,
-          moveTimer: 0,
-          shootCooldown: 0,
-          alive: true
-        };
-
-        gameState.players[socketId] = playerData;
-        matchState.activePlayers[socketId] = true;
-        spawnIndex += 1;
-      }
-
-      matchState.connectedPlayers = {};
-      emitMatchState();
-      emitGameState();
-      checkForWinner();
+      restartTournament();
     });
 
     socket.on("move", ({ direction } = {}) => {
