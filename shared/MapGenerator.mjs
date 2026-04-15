@@ -1,8 +1,12 @@
 export class MapGenerator {
-    static MUR_SOLIDE = 1;
-    static MUR_DESTRUCTIBLE = 2;
+    static EMPTY = 0;
+    static SOLID_WALL = 1;
+    static DESTRUCTIBLE_WALL = 2;
     static SPAWN = 4;
 
+    // Backward-compatible aliases used by the server.
+    static MUR_SOLIDE = 1;
+    static MUR_DESTRUCTIBLE = 2;
 
     static createMap(width, height) {
         const map = this.createEmptyMap(width, height);
@@ -15,16 +19,28 @@ export class MapGenerator {
         return map;
     }
 
+    static createFinalMap(width, height) {
+        const map = this.createEmptyMap(width, height);
+        const spawns = this.generateSpawns(width, height);
+
+        this.placeSpawns(map, spawns);
+        this.placeFinalWalls(map, spawns, width, height);
+        this.placeSpawnProtectionWalls(map, spawns, width, height);
+
+        return map;
+    }
+
     static createEmptyMap(width, height) {
         const map = [];
 
-        for (let y = 0; y < height; y++) {
+        for (let y = 0; y < height; y += 1) {
             map[y] = [];
 
-            for (let x = 0; x < width; x++) {
-                map[y][x] = 0;
+            for (let x = 0; x < width; x += 1) {
+                map[y][x] = this.EMPTY;
             }
         }
+
         return map;
     }
 
@@ -66,41 +82,62 @@ export class MapGenerator {
     }
 
     static placeWalls(map, spawns, width, height) {
-        const wallChance = 0.18;
+        this.placeRandomWalls(map, spawns, width, height, {
+            wallChance: 0.20,
+            solidChance: 0.5,
+            spawnSafeRadius: 1,
+            avoidBorders: true
+        });
+    }
 
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
+    static placeFinalWalls(map, spawns, width, height) {
+        // Zone reservee au design de la map finale.
+        // Modifie cette fonction pour changer uniquement l'arene de finale.
+        this.placeRandomWalls(map, spawns, width, height, {
+            wallChance: 0.15,
+            solidChance: 0,
+            spawnSafeRadius: 1,
+            avoidBorders: true
+        });
+    }
 
-                // Ne jamais écraser un spawn
-                if (map[y][x] !== 0) {
+    static placeRandomWalls(map, spawns, width, height, options = {}) {
+        const wallChance = options.wallChance ?? 0.18;
+        const solidChance = options.solidChance ?? 0.5;
+        const spawnSafeRadius = options.spawnSafeRadius ?? 1;
+        const avoidBorders = options.avoidBorders ?? true;
+
+        for (let y = 0; y < height; y += 1) {
+            for (let x = 0; x < width; x += 1) {
+                if (!this.canPlaceWall(map, spawns, width, height, x, y, spawnSafeRadius, avoidBorders)) {
                     continue;
                 }
 
-                // Safe zone autour des spawns
-                if (this.isNearSpawn(x, y, spawns, 1)) {
+                if (Math.random() >= wallChance) {
                     continue;
                 }
 
-
-                // On garde les bords plus ouverts pour le wrap
-                const isNearBorder =
-                    x === 0 || y === 0 || x === width - 1 || y === height - 1;
-
-                if (isNearBorder) {
-                    continue;
-                }
-
-                if (Math.random() < wallChance) {
-                    if (Math.random() < 0.5) {
-                        map[y][x] = this.MUR_SOLIDE;
-                    } else {
-                        map[y][x] = this.MUR_DESTRUCTIBLE;
-                    }
-
-                }
-
+                map[y][x] = Math.random() < solidChance
+                    ? this.SOLID_WALL
+                    : this.DESTRUCTIBLE_WALL;
             }
         }
+    }
+
+    static canPlaceWall(map, spawns, width, height, x, y, spawnSafeRadius = 1, avoidBorders = true) {
+        if (x < 0 || x >= width || y < 0 || y >= height) {
+            return false;
+        }
+
+        if (map[y][x] !== this.EMPTY) {
+            return false;
+        }
+
+        if (this.isNearSpawn(x, y, spawns, spawnSafeRadius)) {
+            return false;
+        }
+
+        return !avoidBorders || (x > 0 && y > 0 && x < width - 1 && y < height - 1);
     }
 
     static placeSpawnProtectionWalls(map, spawns, width, height) {
@@ -108,8 +145,6 @@ export class MapGenerator {
 
         for (const spawn of spawns) {
             const positions = [
-                //{ x: spawn.x, y: spawn.y - dist },
-                //{ x: spawn.x, y: spawn.y + dist },
                 { x: spawn.x - dist, y: spawn.y },
                 { x: spawn.x + dist, y: spawn.y }
             ];
@@ -119,15 +154,23 @@ export class MapGenerator {
                     continue;
                 }
 
-                map[pos.y][pos.x] = 1;
-
+                map[pos.y][pos.x] = this.SOLID_WALL;
             }
         }
     }
 
+    static placeFinalTile(map, spawns, width, height, x, y, tileType) {
+        if (!this.canPlaceWall(map, spawns, width, height, x, y, 1, false)) {
+            return false;
+        }
+
+        map[y][x] = tileType;
+        return true;
+    }
+
     static placeSpawns(map, spawns) {
-        spawns.forEach(spawn => {
-            map[spawn.y][spawn.x] = 4;
+        spawns.forEach((spawn) => {
+            map[spawn.y][spawn.x] = this.SPAWN;
         });
     }
 }
