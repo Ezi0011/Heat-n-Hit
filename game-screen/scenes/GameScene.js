@@ -318,13 +318,20 @@ export class GameScene extends Phaser.Scene {
         const playerCount = (this.matchState.activePlayers || []).length;
         const roundLabel = this.matchState.currentRound?.label || "";
         const roundMessage = this.matchState.message || "";
+        const countdownSeconds = typeof this.matchState.countdownSeconds === "number"
+            ? this.matchState.countdownSeconds
+            : null;
 
         if (roundLabel) {
-            const qualifierCount = this.matchState.currentRound?.qualifierCount;
-            const qualifierText = this.matchState.phase === "quarterfinals" && typeof qualifierCount === "number"
-                ? ` - ${qualifierCount} qualifie(s)`
-                : "";
-            this.setRoundText(`${roundLabel}${qualifierText}`);
+            if (countdownSeconds !== null) {
+                this.setRoundText(`${roundLabel} - ${countdownSeconds}s`);
+            } else {
+                const qualifierCount = this.matchState.currentRound?.qualifierCount;
+                const qualifierText = this.matchState.phase === "quarterfinals" && typeof qualifierCount === "number"
+                    ? ` - ${qualifierCount} qualifie(s)`
+                    : "";
+                this.setRoundText(`${roundLabel}${qualifierText}`);
+            }
         } else {
             this.setRoundText("");
         }

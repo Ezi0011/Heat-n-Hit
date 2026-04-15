@@ -23,6 +23,7 @@ const MOVE_TICKS = 2;
 const SHOOT_COOLDOWN_TICKS = 3;
 const PROJECTILE_MAX_TICKS = 50;
 const ROUND_TRANSITION_MS = 2800;
+const ROUND_COUNTDOWN_SECONDS = 10;
 
 const COLORS = [
   "#000000",
@@ -98,7 +99,9 @@ async function startServer() {
     currentRound: null,
     finalists: [],
     winnerId: null,
-    transitionTimer: null
+    transitionTimer: null,
+    transitionInterval: null,
+    countdownSeconds: null
   };
 
   function clearTransitionTimer() {
@@ -106,6 +109,13 @@ async function startServer() {
       clearTimeout(matchState.transitionTimer);
       matchState.transitionTimer = null;
     }
+
+    if (matchState.transitionInterval) {
+      clearInterval(matchState.transitionInterval);
+      matchState.transitionInterval = null;
+    }
+
+    matchState.countdownSeconds = null;
   }
 
   function scheduleTransition(callback, delayMs = ROUND_TRANSITION_MS) {
@@ -151,6 +161,7 @@ async function startServer() {
       state: matchState.state,
       phase: matchState.phase,
       message: matchState.message,
+      countdownSeconds: matchState.countdownSeconds,
       controllerUrl: getControllerUrl(),
       connectedPlayers: publicPlayers,
       registeredPlayers: publicPlayers,
@@ -287,6 +298,32 @@ async function startServer() {
     return groups;
   }
 
+  function shuffleArray(values) {
+    const shuffled = [...values];
+
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+
+    return shuffled;
+  }
+
+  function assignRoundColors(participantIds) {
+    const shuffledColorIndexes = shuffleArray(COLORS.map((_color, index) => index));
+
+    participantIds.forEach((playerId, participantIndex) => {
+      const player = matchState.registeredPlayers[playerId];
+      if (!player) {
+        return;
+      }
+
+      const colorIndex = shuffledColorIndexes[participantIndex];
+      player.colorIndex = colorIndex;
+      player.color = COLORS[colorIndex];
+    });
+  }
+
   function registerPlayer(socketId, name) {
     const playerCount = Object.keys(matchState.registeredPlayers).length;
     if (playerCount >= MAX_PLAYERS) {
@@ -376,19 +413,41 @@ async function startServer() {
 
   function startRound(roundConfig) {
     clearTransitionTimer();
-    resetArena();
+    const participantIds = roundConfig.participantIds
+      .filter((playerId) => Boolean(matchState.registeredPlayers[playerId]));
 
-    matchState.state = "playing";
-    matchState.currentRound = roundConfig;
-    matchState.message = `${roundConfig.label} en cours`;
-
-    if (roundConfig.type === "quarterfinal") {
-      updateStatusesForQuarterSetup(roundConfig.index - 1, roundConfig.participantIds);
-    } else {
-      updateStatusesForFinalSetup(roundConfig.participantIds);
+    if (participantIds.length === 0) {
+      if (roundConfig.type === "final") {
+        startFinalRound();
+      } else {
+        goToNextQuarter(roundConfig.index);
+      }
+      return;
     }
 
-    roundConfig.participantIds.forEach((playerId, spawnIndex) => {
+    const resolvedRoundConfig = {
+      ...roundConfig,
+      participantIds,
+      qualifierCount: roundConfig.type === "final"
+        ? 1
+        : getQualifierCount(participantIds.length)
+    };
+
+    resetArena();
+    assignRoundColors(participantIds);
+
+    matchState.state = "transition";
+    matchState.currentRound = resolvedRoundConfig;
+    matchState.countdownSeconds = ROUND_COUNTDOWN_SECONDS;
+    matchState.message = `${resolvedRoundConfig.label} commence dans ${ROUND_COUNTDOWN_SECONDS} s`;
+
+    if (resolvedRoundConfig.type === "quarterfinal") {
+      updateStatusesForQuarterSetup(resolvedRoundConfig.index - 1, resolvedRoundConfig.participantIds);
+    } else {
+      updateStatusesForFinalSetup(resolvedRoundConfig.participantIds);
+    }
+
+    resolvedRoundConfig.participantIds.forEach((playerId, spawnIndex) => {
       if (!matchState.registeredPlayers[playerId]) {
         return;
       }
@@ -398,7 +457,32 @@ async function startServer() {
 
     emitMatchState();
     emitGameState();
-    checkRoundCompletion();
+
+    matchState.transitionInterval = setInterval(() => {
+      if (matchState.countdownSeconds === null) {
+        return;
+      }
+
+      matchState.countdownSeconds -= 1;
+
+      if (matchState.countdownSeconds > 0) {
+        matchState.message = `${resolvedRoundConfig.label} commence dans ${matchState.countdownSeconds} s`;
+        emitMatchState();
+        return;
+      }
+
+      if (matchState.transitionInterval) {
+        clearInterval(matchState.transitionInterval);
+        matchState.transitionInterval = null;
+      }
+
+      matchState.countdownSeconds = null;
+      matchState.state = "playing";
+      matchState.message = `${resolvedRoundConfig.label} en cours`;
+      emitMatchState();
+      emitGameState();
+      checkRoundCompletion();
+    }, 1000);
   }
 
   function goToNextQuarter(nextQuarterIndex) {
