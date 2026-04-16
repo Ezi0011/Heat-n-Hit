@@ -527,6 +527,22 @@ export class GameScene extends Phaser.Scene {
                     groundSource.x, groundSource.y, TILE_SIZE, TILE_SIZE,
                     dx, dy, this.tileSize, this.tileSize
                 );
+
+                if (tileType === TILE_TYPE.DESTRUCTIBLE) {
+                    const outlineWidth = Math.max(2, Math.round(this.tileSize * 0.05));
+                    const inset = Math.max(2, Math.round(this.tileSize * 0.08));
+
+                    ctx.save();
+                    ctx.lineWidth = outlineWidth;
+                    ctx.strokeStyle = "rgba(245, 225, 175, 0.92)";
+                    ctx.strokeRect(
+                        dx + inset,
+                        dy + inset,
+                        this.tileSize - inset * 2,
+                        this.tileSize - inset * 2
+                    );
+                    ctx.restore();
+                }
             }
         }
 
