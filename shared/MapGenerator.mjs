@@ -83,8 +83,8 @@ export class MapGenerator {
 
     static placeWalls(map, spawns, width, height) {
         this.placeRandomWalls(map, spawns, width, height, {
-            wallChance: 0.20,
-            solidChance: 0.5,
+            wallChance: 0.3,
+            solidChance: 0.3,
             spawnSafeRadius: 1,
             avoidBorders: true
         });
@@ -94,7 +94,7 @@ export class MapGenerator {
         // Zone reservee au design de la map finale.
         // Modifie cette fonction pour changer uniquement l'arene de finale.
         this.placeRandomWalls(map, spawns, width, height, {
-            wallChance: 0.15,
+            wallChance: 0.20,
             solidChance: 0,
             spawnSafeRadius: 1,
             avoidBorders: true

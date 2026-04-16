@@ -14,6 +14,30 @@ let playerName = "";
 let playerId = null;
 let matchState = null;
 
+async function requestControllerFullscreen() {
+  const element = document.documentElement;
+
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    return true;
+  }
+
+  try {
+    if (typeof element.requestFullscreen === "function") {
+      await element.requestFullscreen();
+      return true;
+    }
+
+    if (typeof element.webkitRequestFullscreen === "function") {
+      element.webkitRequestFullscreen();
+      return true;
+    }
+  } catch (_error) {
+    return false;
+  }
+
+  return false;
+}
+
 function setControlsEnabled(enabled) {
   buttons.forEach((button) => {
     button.disabled = !enabled;
@@ -180,12 +204,13 @@ function renderControllerState() {
   setControlsEnabled(enabled);
 }
 
-nameBtn.addEventListener("click", () => {
+nameBtn.addEventListener("click", async () => {
   playerName = playerNameInput.value.trim() || "Joueur";
   if (!playerName) {
     return;
   }
 
+  await requestControllerFullscreen();
   nameDialog.style.display = "none";
   gameControls.style.display = "flex";
   setPlayerInfo(formatPlayerMessage(playerName, "🔄 Connexion au tournoi..."));
